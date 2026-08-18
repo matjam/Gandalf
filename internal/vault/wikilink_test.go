@@ -119,6 +119,64 @@ func TestRewriteWikilinks(t *testing.T) {
 	}
 }
 
+// TestInlineCodeIsNotALink covers documents that explain link syntax. The
+// instruction set does exactly this, and treating its examples as references
+// had it linking to notes nobody meant to create.
+func TestInlineCodeIsNotALink(t *testing.T) {
+	tests := []struct {
+		name  string
+		in    string
+		links []string
+	}{
+		{
+			name:  "a single example",
+			in:    "Write links as `[[standard:language-go]]`.",
+			links: nil,
+		},
+		{
+			name:  "a real link beside an example",
+			in:    "Use `[[standard:x]]` to reach [[Real Note]].",
+			links: []string{"Real Note"},
+		},
+		{
+			name:  "double backticks",
+			in:    "Escaped: ``[[standard:x]]``",
+			links: nil,
+		},
+		{
+			name:  "an unclosed backtick does not swallow the line",
+			in:    "A stray ` and then [[Real Note]].",
+			links: []string{"Real Note"},
+		},
+		{
+			name:  "backticks around other text",
+			in:    "Call `gandalf_list` before [[Real Note]].",
+			links: []string{"Real Note"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var got []string
+			for _, l := range ParseWikilinks(tc.in) {
+				got = append(got, l.Target)
+			}
+			if strings.Join(got, ",") != strings.Join(tc.links, ",") {
+				t.Errorf("links = %v, want %v", got, tc.links)
+			}
+		})
+	}
+}
+
+func TestRewriteSkipsInlineCode(t *testing.T) {
+	const in = "Use `[[standard:x]]` to reach [[Real Note]]."
+
+	got := RewriteWikilinks(in, func(target string) string { return strings.ToUpper(target) })
+	if want := "Use `[[standard:x]]` to reach [[REAL NOTE]]."; got != want {
+		t.Errorf("RewriteWikilinks() = %q, want %q", got, want)
+	}
+}
+
 func TestLinkTarget(t *testing.T) {
 	tests := []struct{ in, want string }{
 		{in: "Agent/OS/Memory", want: "Agent/OS/Memory"},

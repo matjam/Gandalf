@@ -95,7 +95,7 @@ func (s *Server) sessionStart(ctx context.Context, _ *sdk.CallToolRequest, in Se
 		}, nil
 	}
 
-	if err := s.vault.Write(note); err != nil {
+	if err := s.write(note); err != nil {
 		return nil, SessionStartOutput{}, err
 	}
 
@@ -161,7 +161,7 @@ func (s *Server) noteNew(ctx context.Context, _ *sdk.CallToolRequest, in NoteNew
 			"%s already exists; append to it with gandalf_note_append instead of replacing it", ref)
 	}
 
-	if err := s.vault.Write(note); err != nil {
+	if err := s.write(note); err != nil {
 		return nil, NoteOutput{}, err
 	}
 
@@ -199,11 +199,37 @@ func (s *Server) noteAppend(ctx context.Context, _ *sdk.CallToolRequest, in Note
 	note.Append(in.Heading, resolved.Body)
 	note.Touch(schema.Today())
 
-	if err := s.vault.Write(note); err != nil {
+	if err := s.write(note); err != nil {
 		return nil, NoteOutput{}, err
 	}
 
 	return nil, s.describe(ref, note), nil
+}
+
+// write saves a note and brings the vault's backlinks back into line.
+//
+// Backlinks are rebuilt on every write rather than tracked incrementally.
+// Adding a link means another note's block is now wrong, and the only way to
+// know which notes are affected is to look — an incremental scheme would be
+// faster and would eventually disagree with the notes themselves.
+func (s *Server) write(note *vault.Note) error {
+	if err := s.vault.Write(note); err != nil {
+		return err
+	}
+
+	if _, err := s.vault.RebuildBacklinks(); err != nil {
+		return err
+	}
+
+	// The note may have gained a backlinks block of its own during the
+	// rebuild, so re-read it before it is described back to the caller.
+	fresh, err := s.vault.Read(note.Path)
+	if err != nil {
+		return err
+	}
+	*note = *fresh
+
+	return nil
 }
 
 // NoteUpdateInput describes metadata changes.
@@ -251,7 +277,7 @@ func (s *Server) noteUpdate(ctx context.Context, _ *sdk.CallToolRequest, in Note
 		return nil, NoteOutput{}, fmt.Errorf("update would leave %s invalid: %s", ref, issues[0].Message)
 	}
 
-	if err := s.vault.Write(note); err != nil {
+	if err := s.write(note); err != nil {
 		return nil, NoteOutput{}, err
 	}
 

@@ -1,0 +1,79 @@
+package server
+
+import (
+	"context"
+	"fmt"
+	"strings"
+
+	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
+)
+
+// NoteDeleteInput names the note to remove.
+type NoteDeleteInput struct {
+	Ref string `json:"ref"`
+}
+
+// NoteDeleteOutput reports what was removed, or why it was not.
+type NoteDeleteOutput struct {
+	Ref     string `json:"ref"`
+	Deleted bool   `json:"deleted"`
+
+	// Rebuilt lists notes whose backlinks changed as a result.
+	Rebuilt []string `json:"backlinks_updated,omitempty"`
+}
+
+// noteDelete removes a note, provided nothing points at it.
+//
+// A note that is still referenced cannot go: deleting it would turn every link
+// to it into a dead one, scattered across notes nobody is looking at. The
+// referrers come back in the error so the caller can fix them rather than
+// hunting for them.
+func (s *Server) noteDelete(ctx context.Context, _ *sdk.CallToolRequest, in NoteDeleteInput) (*sdk.CallToolResult, NoteDeleteOutput, error) {
+	ref, path, err := s.writable(in.Ref)
+	if err != nil {
+		return nil, NoteDeleteOutput{}, err
+	}
+	if !s.vault.Exists(path) {
+		return nil, NoteDeleteOutput{}, fmt.Errorf("%s does not exist", ref)
+	}
+
+	referrers, err := s.vault.Referrers(path)
+	if err != nil {
+		return nil, NoteDeleteOutput{}, err
+	}
+	if len(referrers) > 0 {
+		refs := make([]string, 0, len(referrers))
+		for _, r := range referrers {
+			refs = append(refs, s.canonical(r).String())
+		}
+		return nil, NoteDeleteOutput{}, fmt.Errorf(
+			"%s is linked to by %s. Remove those links first, or keep the note — deleting it would leave dead links behind",
+			ref, strings.Join(refs, ", "))
+	}
+
+	if err := s.vault.Delete(path); err != nil {
+		return nil, NoteDeleteOutput{}, err
+	}
+
+	// The deleted note's own outgoing links are now gone, so whatever it
+	// pointed at needs its backlinks trimmed.
+	rebuilt, err := s.vault.RebuildBacklinks()
+	if err != nil {
+		return nil, NoteDeleteOutput{}, err
+	}
+
+	return nil, NoteDeleteOutput{
+		Ref:     ref.String(),
+		Deleted: true,
+		Rebuilt: s.refsOf(rebuilt),
+	}, nil
+}
+
+// refsOf renders note paths as refs.
+func (s *Server) refsOf(paths []string) []string {
+	out := make([]string, 0, len(paths))
+	for _, p := range paths {
+		out = append(out, s.canonical(p).String())
+	}
+	return out
+}

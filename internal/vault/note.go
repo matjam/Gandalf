@@ -111,7 +111,11 @@ func (n *Note) Touch(on schema.Date) {
 // by convention — decisions, session notes — are exactly the ones an agent
 // writes to repeatedly, and appending cannot destroy what is already there.
 func (n *Note) Append(heading, content string) {
-	body := strings.TrimRight(n.Body, "\n")
+	// Append above the maintained backlinks block, or the addition lands under
+	// a heading it has nothing to do with and is destroyed the next time the
+	// block is rewritten.
+	body := n.Content()
+	_, block := SplitBacklinks(n.Body)
 
 	var b strings.Builder
 	b.WriteString(body)
@@ -127,6 +131,11 @@ func (n *Note) Append(heading, content string) {
 	}
 	b.WriteString(strings.TrimSpace(content))
 	b.WriteString("\n")
+
+	if block != "" {
+		b.WriteString("\n")
+		b.WriteString(block)
+	}
 
 	n.Body = b.String()
 }

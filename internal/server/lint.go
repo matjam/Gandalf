@@ -114,7 +114,7 @@ func (s *Server) correct(ctx context.Context, _ *sdk.CallToolRequest, in Correct
 	note.Append("", fmt.Sprintf("- %s", in.Guidance))
 	note.Touch(schema.Today())
 
-	if err := s.vault.Write(note); err != nil {
+	if err := s.write(note); err != nil {
 		return nil, CorrectOutput{}, err
 	}
 
@@ -150,7 +150,7 @@ func (s *Server) recordReason(target, guidance, reason string) (string, error) {
 	)
 	note.Touch(today)
 
-	if err := s.vault.Write(note); err != nil {
+	if err := s.write(note); err != nil {
 		return "", err
 	}
 

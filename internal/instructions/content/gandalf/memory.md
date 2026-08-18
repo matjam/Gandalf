@@ -8,6 +8,10 @@ supply prose.
 
 Notes are addressed by ref: what a note is, not where it lives. Never a file path.
 
+A ref starts with a category — a kind of note this vault keeps. The categories are
+declared by the vault rather than fixed by Gandalf, so `gandalf_category_list` is the
+authority on which exist and how each is addressed. With the shipped defaults:
+
 | Ref | Addresses |
 |---|---|
 | `session:2026-08-17-cache-invalidation` | a session note |
@@ -18,9 +22,10 @@ Notes are addressed by ref: what a note is, not where it lives. Never a file pat
 | `topic:shipping` | an operating topic |
 | `glossary` | the glossary |
 
-Refs come from the tools — `gandalf_boot`, `gandalf_lint`, or whichever tool created
-the note. Do not construct one from a filename you saw somewhere; where a note lives
-is Gandalf's problem, and it will move things if the vault's conventions change.
+Refs come from the tools — `gandalf_boot`, `gandalf_list`, `gandalf_lint`, or whichever
+tool created the note. Do not construct one from a filename you saw somewhere; where a
+note lives is Gandalf's problem, and it will move things if the vault's conventions
+change.
 
 `session:latest` resolves to the most recent session note. Ask for it explicitly when
 you mean it; nothing defaults to it.
@@ -61,6 +66,8 @@ Read-only work creates no notes. Read freely, write nothing.
   safe to keep adding to.
 - `gandalf_note_update` changes metadata only — tags, related links, status. The
   updated date is maintained for you.
+- `gandalf_note_delete` removes a note, and refuses while anything still links to it,
+  listing what does so the links can be dealt with first.
 - `gandalf_lint` reports schema violations and links pointing nowhere, addressed by
   ref so a finding can be fed straight back in.
 
@@ -68,6 +75,31 @@ You never write a frontmatter block by hand, never choose a filename, and never 
 vault file in an editor. Every read and write goes through these tools — that is what
 keeps metadata valid, links resolvable in the vault's own editor, and appended records
 intact.
+
+## Links and Backlinks
+
+Write links as refs: `[[standard:language-go]]`. They are stored as vault paths so the
+vault's own editor resolves them, and handed back to you as refs. A link to a note that
+does not exist is refused — create the target first, or leave the link out. Gandalf will
+not write a link it knows is dead, and will not create an empty note to satisfy one.
+
+Each note carries a `## Backlinks` section listing what points at it, maintained by
+Gandalf. Read it to find out what depends on a note before changing it. Do not write
+into it; it is rewritten whenever links change, and anything you put there is lost.
+
+## Categories
+
+A category is a kind of note: what it is called, where its notes are filed, and how
+they are addressed. The vault declares its own, so it can keep whatever the work
+actually produces rather than only what Gandalf imagined.
+
+- `gandalf_category_list` shows what exists, with the ref form for each.
+- `gandalf_category_create` declares a new one. This is a design decision about how the
+  vault is organised, so ask before doing it — do not invent a category to avoid
+  thinking about where a note belongs.
+- `gandalf_category_retire` stops new notes being filed under one, leaving the existing
+  notes readable and writable.
+- `gandalf_category_delete` removes one entirely, and only when it holds no notes.
 
 ## Session Notes
 

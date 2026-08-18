@@ -98,8 +98,11 @@ func inspect(v *vault.Vault, doc Doc, ledger *Ledger) (Status, error) {
 		return Status{}, err
 	}
 
+	// Fingerprint the note's own content, not the maintained backlinks block:
+	// otherwise linking to a seeded standard would report it as modified by
+	// the user, who did nothing.
 	status := Status{Doc: doc, SeededVersion: version(note)}
-	switch current := HashBody(note.Body); {
+	switch current := HashBody(note.Content()); {
 	case current == seeded && seeded == shipped:
 		status.State = StateCurrent
 	case current == seeded:

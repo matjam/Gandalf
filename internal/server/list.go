@@ -19,7 +19,7 @@ import (
 type ListInput struct {
 	Kind string `json:"kind" jsonschema:"what to list; the categories this vault declares, plus topics and all"`
 
-	Project string `json:"project,omitempty" jsonschema:"restrict to one project"`
+	Scope string `json:"scope,omitempty" jsonschema:"restrict to one scope of a scoped category, such as a project name"`
 
 	Limit int `json:"limit,omitempty" jsonschema:"maximum entries to return; defaults to 50"`
 }
@@ -99,7 +99,7 @@ func (s *Server) list(ctx context.Context, _ *sdk.CallToolRequest, in ListInput)
 		return nil, out, nil
 
 	case "all":
-		notes, err := s.summaries(nil, in.Project)
+		notes, err := s.summaries(nil, in.Scope)
 		if err != nil {
 			return nil, ListOutput{}, err
 		}
@@ -118,7 +118,7 @@ func (s *Server) list(ctx context.Context, _ *sdk.CallToolRequest, in ListInput)
 	// caller wants from "projects" is which projects exist, not three rows per
 	// project.
 	if cat.Rule == category.RuleScoped {
-		groups, err := s.scopes(cat, in.Project)
+		groups, err := s.scopes(cat, in.Scope)
 		if err != nil {
 			return nil, ListOutput{}, err
 		}
@@ -127,7 +127,7 @@ func (s *Server) list(ctx context.Context, _ *sdk.CallToolRequest, in ListInput)
 		return nil, out, nil
 	}
 
-	notes, err := s.summaries(&cat.Name, in.Project)
+	notes, err := s.summaries(&cat.Name, in.Scope)
 	if err != nil {
 		return nil, ListOutput{}, err
 	}

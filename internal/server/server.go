@@ -119,6 +119,12 @@ func (s *Server) MCP() *sdk.Server {
 	}, s.categoryDelete)
 
 	sdk.AddTool(srv, &sdk.Tool{
+		Name: "gandalf_note_delete",
+		Description: "Delete a note. Refused when other notes link to it, listing them so " +
+			"the links can be removed first.",
+	}, s.noteDelete)
+
+	sdk.AddTool(srv, &sdk.Tool{
 		Name: "gandalf_lint",
 		Description: "Validate note metadata and links, for one note or the whole vault. " +
 			"Reports are addressed by ref.",

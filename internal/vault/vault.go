@@ -103,6 +103,20 @@ func (v *Vault) Write(n *Note) error {
 	return writeFileAtomic(abs, n.Render())
 }
 
+// Delete removes a note. Whether anything still links to it is a question for
+// the caller: this package removes files, it does not have opinions about
+// which ones deserve to survive.
+func (v *Vault) Delete(rel string) error {
+	abs, err := v.abs(rel)
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(abs); err != nil {
+		return fmt.Errorf("delete note %q: %w", rel, err)
+	}
+	return nil
+}
+
 // Exists reports whether a note exists at a vault-relative path.
 func (v *Vault) Exists(rel string) bool {
 	abs, err := v.abs(rel)

@@ -98,7 +98,7 @@ func TestListProjectFilter(t *testing.T) {
 	populate(t, h)
 
 	var out ListOutput
-	h.call("gandalf_list", ListInput{Kind: "projects", Project: "egg"}, &out)
+	h.call("gandalf_list", ListInput{Kind: "projects", Scope: "egg"}, &out)
 
 	if len(out.Projects) != 1 || out.Projects[0].Name != "egg" {
 		t.Fatalf("projects = %+v, want only egg", out.Projects)

@@ -9,6 +9,15 @@ kept in version control.
 | `Standards/` | Engineering standards the agent applies to code |
 | `Projects/` | One folder per project: design, decisions, todo |
 | `Sessions/` | A note per unit of work, filed by date |
+| `Meetings/` | Notes from conversations with other people |
+
+Those folders come from the categories this vault declares, in
+`.gandalf/categories.json`. Add your own, rename them, or retire the ones you do not
+use: what kinds of note the vault keeps is your decision, not Gandalf's.
+
+Each note ends with a `## Backlinks` section listing what points at it. Gandalf
+maintains that block, so edits inside it are overwritten — everything above it is
+yours.
 
 ## How It Works
 
