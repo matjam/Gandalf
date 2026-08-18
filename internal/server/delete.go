@@ -67,6 +67,7 @@ func (s *Server) noteDelete(ctx context.Context, _ *sdk.CallToolRequest, in Note
 		return nil, NoteDeleteOutput{}, err
 	}
 
+	s.record("gandalf: note delete " + ref.String())
 	return nil, NoteDeleteOutput{
 		Ref:     ref.String(),
 		Deleted: true,

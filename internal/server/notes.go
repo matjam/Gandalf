@@ -141,6 +141,7 @@ func (s *Server) sessionStart(ctx context.Context, _ *sdk.CallToolRequest, in Se
 		return nil, SessionStartOutput{}, err
 	}
 
+	s.record("gandalf: session start " + ref.String())
 	return nil, SessionStartOutput{Ref: ref.String(), Created: true}, nil
 }
 
@@ -207,7 +208,9 @@ func (s *Server) noteNew(ctx context.Context, _ *sdk.CallToolRequest, in NoteNew
 		return nil, NoteOutput{}, err
 	}
 
-	return nil, s.describe(s.canonical(note.Path), note), nil
+	ref := s.canonical(note.Path)
+	s.record("gandalf: note new " + ref.String())
+	return nil, s.describe(ref, note), nil
 }
 
 // NoteAppendInput describes content to add to a note.
@@ -245,10 +248,10 @@ func (s *Server) noteAppend(ctx context.Context, _ *sdk.CallToolRequest, in Note
 		return nil, NoteOutput{}, err
 	}
 
+	s.record("gandalf: note append " + ref.String())
 	return nil, s.describe(ref, note), nil
 }
 
-// write saves a note and updates the backlinks of whatever it now links to,
 // or has stopped linking to.
 //
 // Only those notes are touched. Writing a note never changes that note's own
@@ -319,6 +322,7 @@ func (s *Server) noteUpdate(ctx context.Context, _ *sdk.CallToolRequest, in Note
 		return nil, NoteOutput{}, err
 	}
 
+	s.record("gandalf: note update " + ref.String())
 	return nil, s.describe(ref, note), nil
 }
 

@@ -106,6 +106,7 @@ func (s *Server) noteReplace(ctx context.Context, _ *sdk.CallToolRequest, in Not
 		return nil, NoteReplaceOutput{}, err
 	}
 
+	s.record("gandalf: note replace " + ref.String())
 	return nil, NoteReplaceOutput{
 		NoteOutput: s.describe(ref, note),
 		Removed:    s.toRefs(removed),

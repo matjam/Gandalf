@@ -52,7 +52,22 @@ gandalf init -vault ~/Documents/Vaults/Gandalf
 ```
 
 That writes the GandalfOS documents, a category declaration, and a seed ledger. It
-never overwrites a file that already exists.
+never overwrites a file that already exists. It also initialises a git repository
+for the vault so every later change can be committed automatically. Pass
+`-git-remote URL` to configure a remote up front, or `-no-git` to skip.
+
+## Version control
+
+The model does not run git. Gandalf does:
+
+- `init` and `serve` create a repository when one is missing.
+- Every MCP mutation (and the end of `import` / `update`) becomes a commit.
+- When a remote is configured, `serve` periodically pulls and pushes. Pull
+  conflicts resolve as **remote-wins**.
+- The model configures the remote with `gandalf_git_remote` (or you pass
+  `-git-remote` to `init`). Settings live in `.gandalf/git.json`.
+
+Derived search indexes stay out of git via `.gandalf/.gitignore`.
 
 ## Connect an agent
 
@@ -162,8 +177,8 @@ of the import. Run `gandalf lint` afterwards to see what still needs attention.
 ## Commands
 
 ```
-gandalf serve   -vault DIR [-no-seed] [embedding flags]
-gandalf init    [-vault DIR] [-restore]
+gandalf serve   -vault DIR [-no-seed] [-no-git] [embedding flags]
+gandalf init    [-vault DIR] [-restore] [-git-remote URL] [-no-git]
 gandalf import  -from DIR [-vault DIR] [-rules FILE] [-apply]
 gandalf reindex [-vault DIR] [embedding flags]
 gandalf doctor  [-vault DIR]
@@ -171,7 +186,8 @@ gandalf lint    [-vault DIR] [-strict] [NOTE...]
 ```
 
 `init` seeds what is missing and never overwrites. A document you deleted stays
-deleted; `-restore` puts it back.
+deleted; `-restore` puts it back. It also creates a git repository unless
+`-no-git` is given.
 
 `doctor` reports how your copy of each shipped document compares with this build —
 unchanged, edited by you, superseded upstream, both, absent, or removed. It only

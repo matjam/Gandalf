@@ -128,6 +128,7 @@ func (s *Server) correct(ctx context.Context, _ *sdk.CallToolRequest, in Correct
 		out.History = historyRef
 	}
 
+	s.record("gandalf: correct " + ref.String())
 	return nil, out, nil
 }
 

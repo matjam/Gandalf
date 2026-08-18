@@ -72,5 +72,6 @@ func importVault(args []string) error {
 		fmt.Println("run `gandalf lint` to see which notes still reference them in prose")
 	}
 
+	commitVault(dst, fmt.Sprintf("gandalf: import %d note(s)", result.Imported))
 	return nil
 }

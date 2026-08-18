@@ -53,8 +53,8 @@ func usage() {
 	fmt.Fprint(os.Stderr, `gandalf — vault tooling for agent memory
 
 usage:
-  gandalf serve   -vault DIR [-no-seed] [embedding flags]
-  gandalf init    [-vault DIR] [-restore]
+  gandalf serve   -vault DIR [-no-seed] [-no-git] [embedding flags]
+  gandalf init    [-vault DIR] [-restore] [-git-remote URL] [-no-git]
   gandalf update  [-vault DIR]
   gandalf import  -from DIR [-vault DIR] [-rules FILE] [-apply]
   gandalf reindex [-vault DIR] [embedding flags]
@@ -68,12 +68,15 @@ embedding flags:
   -embed-dims N     vector length the model returns (default 768)
 
   serve   run the MCP server over stdio, seeding the vault first unless
-          -no-seed is given; this is what an agent connects to
+          -no-seed is given; maintains a git repo of the vault unless
+          -no-git is given, committing every change and syncing a remote
+          when one is configured
   import  move an existing markdown vault in, preserving dates and
           rewriting links; prints the plan and writes nothing without -apply
   reindex build the search index up front, rather than on the first search
   init    create the vault if needed and seed any missing GandalfOS
-          documents; never overwrites an existing file
+          documents; never overwrites an existing file; creates a git
+          repository unless -no-git is given
   update  adopt this build's text for documents you have not edited,
           leaving edited and diverged ones alone
   doctor  report how the vault's copy of each shipped document compares

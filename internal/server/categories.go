@@ -116,6 +116,7 @@ func (s *Server) categoryCreate(ctx context.Context, _ *sdk.CallToolRequest, in 
 		return nil, CategoryChangeOutput{}, err
 	}
 
+	s.record("gandalf: category create " + cat.Name)
 	return nil, CategoryChangeOutput{Category: view(cat, 0)}, nil
 }
 
@@ -149,6 +150,7 @@ func (s *Server) categoryRetire(ctx context.Context, _ *sdk.CallToolRequest, in 
 		return nil, CategoryChangeOutput{}, err
 	}
 
+	s.record("gandalf: category retire " + cat.Name)
 	return nil, CategoryChangeOutput{
 		Category: view(cat, counts[cat.Name]),
 		Note:     "no new notes can be filed here; the ones already filed stay addressable",
@@ -185,6 +187,7 @@ func (s *Server) categoryDelete(ctx context.Context, _ *sdk.CallToolRequest, in 
 		return nil, CategoryChangeOutput{}, err
 	}
 
+	s.record("gandalf: category delete " + cat.Name)
 	return nil, CategoryChangeOutput{
 		Category: view(cat, 0),
 		Note:     "deleted; the folder itself is left alone",

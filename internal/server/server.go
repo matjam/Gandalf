@@ -10,12 +10,14 @@ package server
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/matjam/gandalf/internal/embed"
+	"github.com/matjam/gandalf/internal/git"
 	"github.com/matjam/gandalf/internal/instructions"
 	"github.com/matjam/gandalf/internal/vault"
 )
@@ -27,6 +29,11 @@ const KindTopic = "topic"
 // Server exposes one vault.
 type Server struct {
 	vault *vault.Vault
+
+	// git maintains the vault as a repository when set. Mutations commit
+	// through it; a nil value means the vault is not under git for this
+	// process.
+	git *git.Repo
 
 	// embedder backs search. Nil means search is unavailable and every other
 	// tool works as usual.
@@ -74,6 +81,25 @@ func WithSearch(v *vault.Vault, version string, embedder embed.Embedder) *Server
 	s := New(v, version)
 	s.embedder = embedder
 	return s
+}
+
+// WithGit returns a server that commits every vault mutation and can sync a
+// configured remote. The repo is also what StartSync on the repo itself uses.
+func (s *Server) WithGit(repo *git.Repo) *Server {
+	s.git = repo
+	return s
+}
+
+// record commits the vault after a successful mutation. A commit failure is
+// logged and never returned: the note already landed, and a missing commit is
+// recoverable on the next change.
+func (s *Server) record(message string) {
+	if s.git == nil {
+		return
+	}
+	if err := s.git.Commit(message); err != nil {
+		fmt.Fprintf(os.Stderr, "gandalf: git commit: %v\n", err)
+	}
 }
 
 // Close releases anything the server opened.
@@ -193,6 +219,14 @@ func (s *Server) MCP() *sdk.Server {
 			"owns that kind of guidance. Call this in the same reply as applying the " +
 			"correction, so it survives the session.",
 	}, s.correct)
+
+	sdk.AddTool(srv, &sdk.Tool{
+		Name: "gandalf_git_remote",
+		Description: "Configure the vault's git remote URL so Gandalf can push and pull. " +
+			"Gandalf commits every change automatically; use this when the user wants the " +
+			"vault mirrored to a remote, or pass an empty url to stop syncing. Conflicts " +
+			"resolve as remote-wins on pull.",
+	}, s.gitRemote)
 
 	return srv
 }

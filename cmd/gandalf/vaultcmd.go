@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 
+	"github.com/matjam/gandalf/internal/git"
 	"github.com/matjam/gandalf/internal/instructions"
 	"github.com/matjam/gandalf/internal/schema"
 	"github.com/matjam/gandalf/internal/vault"
@@ -14,6 +15,8 @@ func initVault(args []string) error {
 	fs := flag.NewFlagSet("init", flag.ContinueOnError)
 	root := fs.String("vault", ".", "path to the vault root")
 	restore := fs.Bool("restore", false, "re-add documents that were deleted")
+	remote := fs.String("git-remote", "", "optional git remote URL to configure on the vault")
+	noGit := fs.Bool("no-git", false, "do not create or maintain a git repository")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -40,6 +43,18 @@ func initVault(args []string) error {
 
 	if removed > 0 {
 		fmt.Printf("%d document(s) you deleted were left out; `gandalf init -restore` puts them back\n", removed)
+	}
+
+	if !*noGit {
+		if *remote != "" {
+			repo := git.Open(v.Root())
+			if _, err := repo.SetRemote(*remote); err != nil {
+				return err
+			}
+			fmt.Println("git remote:", *remote)
+		} else if err := ensureVaultGit(v); err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -81,6 +96,7 @@ func updateVault(args []string) error {
 		fmt.Println("compare those against this build by hand; merging an edit is your call, not the tool's")
 	}
 
+	commitVault(v, "gandalf: update shipped documents")
 	return nil
 }
 

@@ -7,7 +7,7 @@ import (
 )
 
 func TestPrepareRequiresAVault(t *testing.T) {
-	if _, err := prepare("", true); err == nil {
+	if _, _, err := prepare("", true, true); err == nil {
 		t.Error("prepare succeeded without a vault path; the server should not guess")
 	}
 }
@@ -17,19 +17,22 @@ func TestPrepareSeeds(t *testing.T) {
 
 	root := filepath.Join(t.TempDir(), "vault")
 
-	v, err := prepare(root, true)
+	v, repo, err := prepare(root, true, true)
 	if err != nil {
 		t.Fatalf("prepare: %v", err)
 	}
 	if !v.Exists("Gandalf/Operating.md") {
 		t.Error("prepare did not seed the contract")
 	}
+	if repo == nil || !repo.IsRepo() {
+		t.Error("prepare did not create a git repository")
+	}
 }
 
 func TestPrepareCanSkipSeeding(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "vault")
 
-	v, err := prepare(root, false)
+	v, _, err := prepare(root, false, false)
 	if err != nil {
 		t.Fatalf("prepare: %v", err)
 	}

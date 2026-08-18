@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/matjam/gandalf/internal/git"
 	"github.com/matjam/gandalf/internal/instructions"
 	"github.com/matjam/gandalf/internal/schema"
 	"github.com/matjam/gandalf/internal/server"
@@ -23,6 +24,7 @@ func serve(args []string) error {
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
 	root := fs.String("vault", "", "path to the vault root (required)")
 	noSeed := fs.Bool("no-seed", false, "do not seed missing GandalfOS documents on startup")
+	noGit := fs.Bool("no-git", false, "do not create or maintain a git repository")
 
 	var embedding embedderFlags
 	embedding.register(fs)
@@ -38,7 +40,7 @@ func serve(args []string) error {
 		return err
 	}
 
-	v, err := prepare(*root, !*noSeed)
+	v, repo, err := prepare(*root, !*noSeed, !*noGit)
 	if err != nil {
 		return err
 	}
@@ -46,41 +48,56 @@ func serve(args []string) error {
 	// The endpoint is not contacted here. Search reports its own failure when
 	// called, so an unreachable model never stops a session starting.
 	srv := server.WithSearch(v, version, embedder)
+	if repo != nil {
+		srv = srv.WithGit(repo)
+	}
 	defer srv.Close()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	if repo != nil {
+		repo.StartSync(ctx)
+	}
 
 	return srv.Run(ctx)
 }
 
 // prepare opens the vault the server will serve, seeding it unless told not
 // to. Seeding on startup is what makes "point it at a directory" a complete
-// install step; it only ever adds what is missing.
-func prepare(root string, seed bool) (*vault.Vault, error) {
+// install step; it only ever adds what is missing. Git maintenance is set up
+// the same way: a fresh vault becomes a repository without a separate step.
+func prepare(root string, seed, useGit bool) (*vault.Vault, *git.Repo, error) {
 	if root == "" {
-		return nil, fmt.Errorf("serve needs -vault; the server will not guess where your notes live")
+		return nil, nil, fmt.Errorf("serve needs -vault; the server will not guess where your notes live")
 	}
 
 	v, err := vault.Open(root)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	if !seed {
-		return v, nil
+	if seed {
+		// Serving never restores deleted documents: a server starting up is not
+		// the moment to reverse a decision the user made.
+		results, err := instructions.Seed(v, schema.Today(), false)
+		if err != nil {
+			return nil, nil, err
+		}
+		// stdout carries the protocol, so anything human-readable goes to stderr.
+		if n := instructions.Created(results); n > 0 {
+			fmt.Fprintf(os.Stderr, "gandalf: seeded %d document(s) into %s\n", n, v.Root())
+		}
 	}
 
-	// Serving never restores deleted documents: a server starting up is not
-	// the moment to reverse a decision the user made.
-	results, err := instructions.Seed(v, schema.Today(), false)
-	if err != nil {
-		return nil, err
-	}
-	// stdout carries the protocol, so anything human-readable goes to stderr.
-	if n := instructions.Created(results); n > 0 {
-		fmt.Fprintf(os.Stderr, "gandalf: seeded %d document(s) into %s\n", n, v.Root())
+	if !useGit {
+		return v, nil, nil
 	}
 
-	return v, nil
+	repo := git.Open(v.Root())
+	if err := repo.Ensure(); err != nil {
+		fmt.Fprintf(os.Stderr, "gandalf: git: %v\n", err)
+		return v, nil, nil
+	}
+	return v, repo, nil
 }
