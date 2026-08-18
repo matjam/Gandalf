@@ -53,7 +53,7 @@ func TestReplaceAndForget(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Hashes: %v", err)
 	}
-	if !hashes["h1"] || !hashes["h2"] || len(hashes) != 2 {
+	if hashes["h1"] != 1 || hashes["h2"] != 1 || len(hashes) != 2 {
 		t.Errorf("hashes = %v", hashes)
 	}
 

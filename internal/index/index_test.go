@@ -356,3 +356,67 @@ func TestReindexStopsWhenCancelled(t *testing.T) {
 		t.Error("a cancelled reindex reported success")
 	}
 }
+
+// TestReindexIsIncrementalWithRepeatedChunks covers a note that produces the
+// same chunk more than once.
+//
+// Comparing stored hashes as a set against the chunk slice made such a note
+// look changed on every pass, so it was re-embedded forever: never wrong, just
+// paying for a first index over and over. Six notes in a real 431-note vault
+// hit this, which is how it was found.
+func TestReindexIsIncrementalWithRepeatedChunks(t *testing.T) {
+	ctx := context.Background()
+	v, store, embedder := fixture(t)
+
+	// Two sections with identical bodies chunk to identical text, and so to
+	// identical hashes.
+	repeated := "# Repeated\n\n## One\n\nThe very same words in both sections.\n\n" +
+		"## Two\n\nThe very same words in both sections.\n"
+	note := &vault.Note{
+		Path: "Standards/repeated.md",
+		FM: schema.Frontmatter{
+			Type:    "standard",
+			Created: schema.Today(),
+			Updated: schema.Today(),
+			Tags:    []string{"standards"},
+			Author:  "agent",
+		},
+		Body: repeated,
+	}
+	if err := v.Write(note); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+
+	if _, err := Reindex(ctx, v, store, embedder, namer(v)); err != nil {
+		t.Fatalf("Reindex: %v", err)
+	}
+
+	// Nothing has changed, so a second pass must embed nothing at all.
+	report, err := Reindex(ctx, v, store, embedder, namer(v))
+	if err != nil {
+		t.Fatalf("second Reindex: %v", err)
+	}
+	if report.Indexed != 0 {
+		t.Errorf("re-indexed %d unchanged note(s); a repeated chunk should not look like a change", report.Indexed)
+	}
+
+	// A third pass, to be sure the first re-index did not merely converge.
+	if report, err = Reindex(ctx, v, store, embedder, namer(v)); err != nil {
+		t.Fatalf("third Reindex: %v", err)
+	}
+	if report.Indexed != 0 {
+		t.Errorf("still re-indexing %d note(s) on the third pass", report.Indexed)
+	}
+
+	// Changing the note must still be noticed.
+	note.Body = repeated + "\n## Three\n\nSomething new.\n"
+	if err := v.Write(note); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if report, err = Reindex(ctx, v, store, embedder, namer(v)); err != nil {
+		t.Fatalf("fourth Reindex: %v", err)
+	}
+	if report.Indexed != 1 {
+		t.Errorf("indexed = %d, want 1; an edit was missed", report.Indexed)
+	}
+}

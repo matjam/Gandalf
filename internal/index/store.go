@@ -143,20 +143,24 @@ func (s *Store) create() error {
 
 // Hashes returns the chunk fingerprints currently stored for a note, so a
 // caller can tell whether it needs re-embedding.
-func (s *Store) Hashes(path string) (map[string]bool, error) {
+func (s *Store) Hashes(path string) (map[string]int, error) {
 	rows, err := s.db.Query(`SELECT hash FROM chunks WHERE path = ?`, path)
 	if err != nil {
 		return nil, fmt.Errorf("read chunk hashes: %w", err)
 	}
 	defer rows.Close()
 
-	out := map[string]bool{}
+	// Counted rather than a set. A note can hold the same text twice — a
+	// repeated boilerplate section, an empty heading rendered identically — and
+	// treating its chunks as a set loses that. The count is what makes a
+	// comparison against freshly computed chunks answerable.
+	out := map[string]int{}
 	for rows.Next() {
 		var hash string
 		if err := rows.Scan(&hash); err != nil {
 			return nil, err
 		}
-		out[hash] = true
+		out[hash]++
 	}
 	return out, rows.Err()
 }

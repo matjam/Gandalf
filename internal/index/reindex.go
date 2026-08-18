@@ -218,17 +218,29 @@ func embedded(c Chunk) string {
 
 // unchanged reports whether the stored chunks for a note match the ones just
 // computed.
+//
+// The comparison counts occurrences rather than treating the hashes as a set.
+// A note can legitimately produce the same chunk twice — a repeated boilerplate
+// section, two headings with identical text beneath them — and comparing a
+// deduplicated set against the chunk slice makes such a note look changed on
+// every single pass. It is then re-embedded forever: never wrong, just quietly
+// paying the cost of a first index over and over.
 func unchanged(store *Store, path string, chunks []Chunk) (bool, error) {
 	stored, err := store.Hashes(path)
 	if err != nil {
 		return false, err
 	}
-	if len(stored) != len(chunks) {
-		return false, nil
+
+	computed := make(map[string]int, len(chunks))
+	for _, c := range chunks {
+		computed[c.Hash]++
 	}
 
-	for _, c := range chunks {
-		if !stored[c.Hash] {
+	if len(stored) != len(computed) {
+		return false, nil
+	}
+	for hash, n := range computed {
+		if stored[hash] != n {
 			return false, nil
 		}
 	}
