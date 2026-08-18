@@ -16,24 +16,50 @@ type SeedResult struct {
 	Reason string
 }
 
-// Seed writes any shipped document the vault does not already have, and leaves
+// Reasons a document was left alone.
+const (
+	ReasonPresent = "already present"
+	ReasonRemoved = "removed by the user"
+)
+
+// Seed writes any shipped document the vault has never had, and leaves
 // everything else alone.
 //
-// It never overwrites. A document already present is the user's, whether they
-// edited it, replaced it, or seeded it from an earlier version — deciding
-// otherwise would mean a release could silently revert a correction.
-func Seed(v *vault.Vault, on schema.Date) ([]SeedResult, error) {
+// It never overwrites, and it never restores. A document already present is
+// the user's, whether they edited it or seeded it from an earlier release; a
+// document they deleted is a decision, and putting it back would revert that
+// decision as surely as overwriting an edit would. Either would make the
+// vault's authority over the binary a fiction.
+//
+// Passing restore re-adds documents that were deleted, for the case where that
+// is what the user actually wants.
+func Seed(v *vault.Vault, on schema.Date, restore bool) ([]SeedResult, error) {
 	if on.IsZero() {
 		on = schema.Today()
 	}
 
+	ledger, err := LoadLedger(v)
+	if err != nil {
+		return nil, err
+	}
+
 	results := make([]SeedResult, 0, len(docs))
+	var wrote bool
+
 	for _, doc := range docs {
-		if v.Exists(doc.Path) {
-			results = append(results, SeedResult{
-				Doc:    doc,
-				Reason: "already present",
-			})
+		switch {
+		case v.Exists(doc.Path):
+			// Record documents that predate the ledger, so deleting one later
+			// is recognised as a deletion rather than treated as never seeded.
+			if !ledger.Records(doc.ID) {
+				ledger.Record(doc.ID, on)
+				wrote = true
+			}
+			results = append(results, SeedResult{Doc: doc, Reason: ReasonPresent})
+			continue
+
+		case ledger.Records(doc.ID) && !restore:
+			results = append(results, SeedResult{Doc: doc, Reason: ReasonRemoved})
 			continue
 		}
 
@@ -45,7 +71,15 @@ func Seed(v *vault.Vault, on schema.Date) ([]SeedResult, error) {
 			return nil, fmt.Errorf("seed %q: %w", doc.Path, err)
 		}
 
+		ledger.Record(doc.ID, on)
+		wrote = true
 		results = append(results, SeedResult{Doc: doc, Created: true})
+	}
+
+	if wrote {
+		if err := ledger.Save(v); err != nil {
+			return nil, err
+		}
 	}
 
 	return results, nil
@@ -87,6 +121,17 @@ func Created(results []SeedResult) int {
 	var n int
 	for _, r := range results {
 		if r.Created {
+			n++
+		}
+	}
+	return n
+}
+
+// Removed counts the documents left out because the user deleted them.
+func Removed(results []SeedResult) int {
+	var n int
+	for _, r := range results {
+		if r.Reason == ReasonRemoved {
 			n++
 		}
 	}

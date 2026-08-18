@@ -106,16 +106,32 @@ func TestDoctorDetectsUnmanagedFiles(t *testing.T) {
 	}
 }
 
-func TestDoctorDetectsDeletedFiles(t *testing.T) {
-	v := seeded(t)
+// TestDoctorDistinguishesDeletedFromNeverSeeded is what stops seeding from
+// reverting a deletion: the two look identical on disk and are opposite
+// decisions.
+func TestDoctorDistinguishesDeletedFromNeverSeeded(t *testing.T) {
+	t.Run("deleted after seeding", func(t *testing.T) {
+		v := seeded(t)
 
-	if err := os.Remove(filepath.Join(v.Root(), filepath.FromSlash("Standards/database.md"))); err != nil {
-		t.Fatalf("remove: %v", err)
-	}
+		if err := os.Remove(filepath.Join(v.Root(), filepath.FromSlash("Standards/database.md"))); err != nil {
+			t.Fatalf("remove: %v", err)
+		}
 
-	if got := stateOf(t, v, "Standards/database.md"); got != StateAbsent {
-		t.Errorf("state = %q, want %q", got, StateAbsent)
-	}
+		if got := stateOf(t, v, "Standards/database.md"); got != StateRemoved {
+			t.Errorf("state = %q, want %q", got, StateRemoved)
+		}
+	})
+
+	t.Run("never seeded", func(t *testing.T) {
+		v, err := vault.Open(t.TempDir())
+		if err != nil {
+			t.Fatalf("Open: %v", err)
+		}
+
+		if got := stateOf(t, v, "Standards/database.md"); got != StateAbsent {
+			t.Errorf("state = %q, want %q", got, StateAbsent)
+		}
+	})
 }
 
 // TestDoctorDetectsUpstreamChanges simulates a vault seeded from a different

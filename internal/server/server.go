@@ -53,6 +53,13 @@ func (s *Server) MCP() *sdk.Server {
 	}, s.topic)
 
 	sdk.AddTool(srv, &sdk.Tool{
+		Name: "gandalf_list",
+		Description: "List what the vault holds, without content: sessions, projects, " +
+			"standards, topics, meetings, interviews, or all. Use it to find prior work " +
+			"before starting, and to discover which projects exist.",
+	}, s.list)
+
+	sdk.AddTool(srv, &sdk.Tool{
 		Name: "gandalf_note_read",
 		Description: "Read a note by ref. Refs come from gandalf_boot, gandalf_lint, or " +
 			"whichever tool created the note; they are never constructed from a file path.",

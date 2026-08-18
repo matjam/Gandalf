@@ -10,9 +10,14 @@ import (
 type State string
 
 const (
-	// StateAbsent means the vault has no note at that path. Either it was
-	// never seeded, or a later release added it.
+	// StateAbsent means the vault has no note at that path and never had one.
+	// Either it was never seeded, or a later release added it.
 	StateAbsent State = "absent"
+
+	// StateRemoved means the document was seeded and the user then deleted it.
+	// Seeding leaves it alone from then on, because deleting a document is a
+	// decision in the same way editing one is.
+	StateRemoved State = "removed"
 
 	// StateUnmanaged means a note exists at that path with no seed stamp: the
 	// user's own file, which Gandalf did not write and will not touch.
@@ -52,10 +57,14 @@ func (s Status) String() string {
 // reads: divergence is the expected outcome of using the vault, and repairing
 // it automatically would undo the user's corrections.
 func Doctor(v *vault.Vault) ([]Status, error) {
-	statuses := make([]Status, 0, len(docs))
+	ledger, err := LoadLedger(v)
+	if err != nil {
+		return nil, err
+	}
 
+	statuses := make([]Status, 0, len(docs))
 	for _, doc := range docs {
-		status, err := inspect(v, doc)
+		status, err := inspect(v, doc, ledger)
 		if err != nil {
 			return nil, err
 		}
@@ -66,8 +75,11 @@ func Doctor(v *vault.Vault) ([]Status, error) {
 }
 
 // inspect classifies a single document.
-func inspect(v *vault.Vault, doc Doc) (Status, error) {
+func inspect(v *vault.Vault, doc Doc, ledger *Ledger) (Status, error) {
 	if !v.Exists(doc.Path) {
+		if ledger.Records(doc.ID) {
+			return Status{Doc: doc, State: StateRemoved}, nil
+		}
 		return Status{Doc: doc, State: StateAbsent}, nil
 	}
 

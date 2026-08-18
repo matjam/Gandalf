@@ -26,7 +26,7 @@ func seeded(t *testing.T) *vault.Vault {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	if _, err := Seed(v, on(t)); err != nil {
+	if _, err := Seed(v, on(t), false); err != nil {
 		t.Fatalf("Seed: %v", err)
 	}
 	return v
@@ -38,7 +38,7 @@ func TestSeedWritesEveryDocument(t *testing.T) {
 		t.Fatalf("Open: %v", err)
 	}
 
-	results, err := Seed(v, on(t))
+	results, err := Seed(v, on(t), false)
 	if err != nil {
 		t.Fatalf("Seed: %v", err)
 	}
@@ -80,7 +80,7 @@ func TestSeedIsIdempotent(t *testing.T) {
 
 	before := snapshot(t, v)
 
-	results, err := Seed(v, on(t))
+	results, err := Seed(v, on(t), false)
 	if err != nil {
 		t.Fatalf("second Seed: %v", err)
 	}
@@ -88,7 +88,7 @@ func TestSeedIsIdempotent(t *testing.T) {
 		t.Errorf("second seed created %d documents, want 0", got)
 	}
 	for _, r := range results {
-		if r.Reason != "already present" {
+		if r.Reason != ReasonPresent {
 			t.Errorf("%s skipped with reason %q", r.Doc.Path, r.Reason)
 		}
 	}
@@ -108,7 +108,7 @@ func TestSeedNeverOverwrites(t *testing.T) {
 	const mine = "---\ntype: standard\ncreated: 2026-01-01\nupdated: 2026-01-01\ntags: [mine]\nauthor: user\n---\n\n# My Own Standard\n"
 	writeRaw(t, v, "Standards/database.md", mine)
 
-	if _, err := Seed(v, on(t)); err != nil {
+	if _, err := Seed(v, on(t), false); err != nil {
 		t.Fatalf("Seed: %v", err)
 	}
 
@@ -162,7 +162,7 @@ func TestSeedDefaultsToToday(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	if _, err := Seed(v, schema.Date{}); err != nil {
+	if _, err := Seed(v, schema.Date{}, false); err != nil {
 		t.Fatalf("Seed: %v", err)
 	}
 

@@ -167,7 +167,7 @@ func TestCorrectionSurvivesReseeding(t *testing.T) {
 	const guidance = "Always run the full suite before pushing."
 	h.call("gandalf_correct", CorrectInput{Target: "topic:shipping", Guidance: guidance}, nil)
 
-	if _, err := instructions.Seed(h.vault, schema.Today()); err != nil {
+	if _, err := instructions.Seed(h.vault, schema.Today(), false); err != nil {
 		t.Fatalf("reseed: %v", err)
 	}
 

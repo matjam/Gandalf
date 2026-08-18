@@ -55,7 +55,9 @@ func prepare(root string, seed bool) (*vault.Vault, error) {
 		return v, nil
 	}
 
-	results, err := instructions.Seed(v, schema.Today())
+	// Serving never restores deleted documents: a server starting up is not
+	// the moment to reverse a decision the user made.
+	results, err := instructions.Seed(v, schema.Today(), false)
 	if err != nil {
 		return nil, err
 	}

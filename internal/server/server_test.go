@@ -3,6 +3,8 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -30,7 +32,7 @@ func newHarness(t *testing.T) *harness {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	if _, err := instructions.Seed(v, schema.Today()); err != nil {
+	if _, err := instructions.Seed(v, schema.Today(), false); err != nil {
 		t.Fatalf("Seed: %v", err)
 	}
 
@@ -91,6 +93,27 @@ func (h *harness) callErr(name string, args any) string {
 		h.t.Fatalf("%s succeeded, want an error", name)
 	}
 	return text(res)
+}
+
+// callParams builds the parameters for a tool call.
+func callParams(name string, args any) *sdk.CallToolParams {
+	return &sdk.CallToolParams{Name: name, Arguments: args}
+}
+
+// writeUnmanaged plants a valid note at a path following none of the vault's
+// filing conventions, which Gandalf must tolerate without adopting.
+func writeUnmanaged(t *testing.T, h *harness, rel string) {
+	t.Helper()
+
+	const note = "---\ntype: standard\ncreated: 2026-01-01\nupdated: 2026-01-01\ntags: [personal]\nauthor: user\n---\n\n# Unmanaged\n"
+
+	abs := filepath.Join(h.vault.Root(), filepath.FromSlash(rel))
+	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+		t.Fatalf("mkdir for %q: %v", rel, err)
+	}
+	if err := os.WriteFile(abs, []byte(note), 0o644); err != nil {
+		t.Fatalf("write %q: %v", rel, err)
+	}
 }
 
 // text renders a result's content as a string.
