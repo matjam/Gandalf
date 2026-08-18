@@ -12,7 +12,7 @@ import (
 	"github.com/matjam/gandalf/internal/vault"
 )
 
-// sessionCategory is the category gandalf_session_start writes to. A vault may
+// sessionCategory is the category session_start writes to. A vault may
 // rename or retire it, in which case session notes simply are not a thing that
 // vault has.
 const sessionCategory = "session"
@@ -147,7 +147,7 @@ func (s *Server) sessionStart(ctx context.Context, _ *sdk.CallToolRequest, in Se
 
 // NoteNewInput describes a note to create.
 type NoteNewInput struct {
-	Kind  string `json:"kind" jsonschema:"the category to file this note under; see gandalf_category_list"`
+	Kind  string `json:"kind" jsonschema:"the category to file this note under; see category_list"`
 	Title string `json:"title"`
 
 	Scope string `json:"scope,omitempty" jsonschema:"required for scoped categories, such as the project name"`
@@ -161,7 +161,7 @@ type NoteNewInput struct {
 
 // noteNew creates a note, filing it by its category.
 //
-// Sessions are excluded deliberately: gandalf_session_start creates those,
+// Sessions are excluded deliberately: session_start creates those,
 // setting the authorship and status the memory protocol expects.
 func (s *Server) noteNew(ctx context.Context, _ *sdk.CallToolRequest, in NoteNewInput) (*sdk.CallToolResult, NoteOutput, error) {
 	kind := strings.TrimSpace(in.Kind)
@@ -174,7 +174,7 @@ func (s *Server) noteNew(ctx context.Context, _ *sdk.CallToolRequest, in NoteNew
 	case !cat.Creatable():
 		return nil, NoteOutput{}, fmt.Errorf("category %q cannot be created through the tools", in.Kind)
 	case cat.Name == sessionCategory:
-		return nil, NoteOutput{}, fmt.Errorf("use gandalf_session_start to open a session note")
+		return nil, NoteOutput{}, fmt.Errorf("use session_start to open a session note")
 	}
 
 	resolved := s.resolveLinks(in.Related, in.Content)
@@ -201,7 +201,7 @@ func (s *Server) noteNew(ctx context.Context, _ *sdk.CallToolRequest, in NoteNew
 	if s.vault.Exists(note.Path) {
 		ref := s.canonical(note.Path)
 		return nil, NoteOutput{}, fmt.Errorf(
-			"%s already exists; append to it with gandalf_note_append instead of replacing it", ref)
+			"%s already exists; append to it with note_append instead of replacing it", ref)
 	}
 
 	if err := s.write(note); err != nil {

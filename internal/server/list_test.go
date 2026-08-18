@@ -18,11 +18,11 @@ func populate(t *testing.T, h *harness) {
 		{Kind: "standard", Title: "Language Rust", Tags: []string{"standards"}},
 		{Kind: "meeting", Title: "Planning", Tags: []string{"meeting"}},
 	} {
-		h.call("gandalf_note_new", in, nil)
+		h.call("note_new", in, nil)
 	}
 
-	h.call("gandalf_session_start", SessionStartInput{Title: "Earlier Work", Tags: []string{"work"}}, nil)
-	h.call("gandalf_session_start", SessionStartInput{Title: "Later Work", Tags: []string{"work"}}, nil)
+	h.call("session_start", SessionStartInput{Title: "Earlier Work", Tags: []string{"work"}}, nil)
+	h.call("session_start", SessionStartInput{Title: "Later Work", Tags: []string{"work"}}, nil)
 }
 
 func TestListSessions(t *testing.T) {
@@ -30,7 +30,7 @@ func TestListSessions(t *testing.T) {
 	populate(t, h)
 
 	var out ListOutput
-	h.call("gandalf_list", ListInput{Kind: "sessions"}, &out)
+	h.call("list", ListInput{Kind: "sessions"}, &out)
 
 	if out.Total != 2 {
 		t.Fatalf("total = %d, want 2: %+v", out.Total, out.Notes)
@@ -54,9 +54,9 @@ func TestListReturnsNoContent(t *testing.T) {
 	h := newHarness(t)
 	populate(t, h)
 
-	res, err := h.client.CallTool(h.context, callParams("gandalf_list", ListInput{Kind: "all"}))
+	res, err := h.client.CallTool(h.context, callParams("list", ListInput{Kind: "all"}))
 	if err != nil {
-		t.Fatalf("gandalf_list: %v", err)
+		t.Fatalf("list: %v", err)
 	}
 	if strings.Contains(text(res), "## ") {
 		t.Error("a listing returned note content")
@@ -68,7 +68,7 @@ func TestListProjects(t *testing.T) {
 	populate(t, h)
 
 	var out ListOutput
-	h.call("gandalf_list", ListInput{Kind: "projects"}, &out)
+	h.call("list", ListInput{Kind: "projects"}, &out)
 
 	if len(out.Projects) != 2 {
 		t.Fatalf("projects = %+v, want two", out.Projects)
@@ -86,7 +86,7 @@ func TestListProjects(t *testing.T) {
 	// Every ref a listing reports must be readable.
 	for _, ref := range first.Notes {
 		var note NoteOutput
-		h.call("gandalf_note_read", NoteReadInput{Ref: ref}, &note)
+		h.call("note_read", NoteReadInput{Ref: ref}, &note)
 		if note.Ref != ref {
 			t.Errorf("read %q returned ref %q", ref, note.Ref)
 		}
@@ -98,7 +98,7 @@ func TestListProjectFilter(t *testing.T) {
 	populate(t, h)
 
 	var out ListOutput
-	h.call("gandalf_list", ListInput{Kind: "projects", Scope: "egg"}, &out)
+	h.call("list", ListInput{Kind: "projects", Scope: "egg"}, &out)
 
 	if len(out.Projects) != 1 || out.Projects[0].Name != "egg" {
 		t.Fatalf("projects = %+v, want only egg", out.Projects)
@@ -113,7 +113,7 @@ func TestListStandardsIncludesSeeded(t *testing.T) {
 	populate(t, h)
 
 	var out ListOutput
-	h.call("gandalf_list", ListInput{Kind: "standards", Limit: 100}, &out)
+	h.call("list", ListInput{Kind: "standards", Limit: 100}, &out)
 
 	found := map[string]bool{}
 	for _, n := range out.Notes {
@@ -130,7 +130,7 @@ func TestListTopics(t *testing.T) {
 	h := newHarness(t)
 
 	var out ListOutput
-	h.call("gandalf_list", ListInput{Kind: "topics"}, &out)
+	h.call("list", ListInput{Kind: "topics"}, &out)
 
 	if len(out.Topics) == 0 {
 		t.Fatal("no topics listed")
@@ -138,7 +138,7 @@ func TestListTopics(t *testing.T) {
 
 	// The listing must agree with what boot advertises.
 	var boot BootOutput
-	h.call("gandalf_boot", BootInput{}, &boot)
+	h.call("boot", BootInput{}, &boot)
 	if len(out.Topics) != len(boot.Topics) {
 		t.Errorf("listed %d topics, boot advertises %d", len(out.Topics), len(boot.Topics))
 	}
@@ -160,7 +160,7 @@ func TestListAllExcludesUnconventionalNotes(t *testing.T) {
 	writeUnmanaged(t, h, "Personal/Something.md")
 
 	var out ListOutput
-	h.call("gandalf_list", ListInput{Kind: "all", Limit: 200}, &out)
+	h.call("list", ListInput{Kind: "all", Limit: 200}, &out)
 
 	for _, n := range out.Notes {
 		if strings.HasPrefix(n.Ref, "path:") {
@@ -174,7 +174,7 @@ func TestListLimit(t *testing.T) {
 	populate(t, h)
 
 	var out ListOutput
-	h.call("gandalf_list", ListInput{Kind: "all", Limit: 3}, &out)
+	h.call("list", ListInput{Kind: "all", Limit: 3}, &out)
 
 	if len(out.Notes) != 3 {
 		t.Errorf("returned %d notes, want 3", len(out.Notes))
@@ -190,7 +190,7 @@ func TestListLimit(t *testing.T) {
 func TestListRejectsUnknownKind(t *testing.T) {
 	h := newHarness(t)
 
-	msg := h.callErr("gandalf_list", ListInput{Kind: "diaries"})
+	msg := h.callErr("list", ListInput{Kind: "diaries"})
 	for _, want := range []string{"unknown kind", "sessions", "projects", "topics"} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("message omits %q: %q", want, msg)
@@ -203,7 +203,7 @@ func TestListDefaultsToAll(t *testing.T) {
 	populate(t, h)
 
 	var out ListOutput
-	h.call("gandalf_list", ListInput{}, &out)
+	h.call("list", ListInput{}, &out)
 
 	if out.Kind != "all" {
 		t.Errorf("kind = %q, want all", out.Kind)

@@ -32,9 +32,9 @@ func TestBodyLinksAreStoredAsPaths(t *testing.T) {
 	h := newHarness(t)
 
 	var session SessionStartOutput
-	h.call("gandalf_session_start", SessionStartInput{Title: "Linking Work", Tags: []string{"work"}}, &session)
+	h.call("session_start", SessionStartInput{Title: "Linking Work", Tags: []string{"work"}}, &session)
 
-	h.call("gandalf_note_append", NoteAppendInput{
+	h.call("note_append", NoteAppendInput{
 		Ref: session.Ref,
 		Content: "Applied [[standard:language-go]] and the shipping topic " +
 			"[[topic:shipping|as written]], plus a heading link [[standard:privacy#Classification]].",
@@ -62,14 +62,14 @@ func TestBodyLinksAreReturnedAsRefs(t *testing.T) {
 	h := newHarness(t)
 
 	var session SessionStartOutput
-	h.call("gandalf_session_start", SessionStartInput{Title: "Linking Work", Tags: []string{"work"}}, &session)
-	h.call("gandalf_note_append", NoteAppendInput{
+	h.call("session_start", SessionStartInput{Title: "Linking Work", Tags: []string{"work"}}, &session)
+	h.call("note_append", NoteAppendInput{
 		Ref:     session.Ref,
 		Content: "Applied [[standard:language-go]] and [[topic:shipping|as written]].",
 	}, nil)
 
 	var out NoteOutput
-	h.call("gandalf_note_read", NoteReadInput{Ref: session.Ref}, &out)
+	h.call("note_read", NoteReadInput{Ref: session.Ref}, &out)
 
 	for _, want := range []string{"[[standard:language-go]]", "[[topic:shipping|as written]]"} {
 		if !strings.Contains(out.Content, want) {
@@ -85,16 +85,16 @@ func TestLinkRoundTripIsStable(t *testing.T) {
 	h := newHarness(t)
 
 	var session SessionStartOutput
-	h.call("gandalf_session_start", SessionStartInput{Title: "Round Trip", Tags: []string{"work"}}, &session)
+	h.call("session_start", SessionStartInput{Title: "Round Trip", Tags: []string{"work"}}, &session)
 
 	const content = "See [[standard:language-go]] for detail."
-	h.call("gandalf_note_append", NoteAppendInput{Ref: session.Ref, Content: content}, nil)
+	h.call("note_append", NoteAppendInput{Ref: session.Ref, Content: content}, nil)
 
 	var first NoteOutput
-	h.call("gandalf_note_read", NoteReadInput{Ref: session.Ref}, &first)
+	h.call("note_read", NoteReadInput{Ref: session.Ref}, &first)
 
 	// Feeding a tool's own output back in must not double-translate.
-	h.call("gandalf_note_append", NoteAppendInput{Ref: session.Ref, Content: first.Content}, nil)
+	h.call("note_append", NoteAppendInput{Ref: session.Ref, Content: first.Content}, nil)
 
 	raw := diskOf(t, h, session.Ref)
 	if strings.Contains(raw, "standard:language-go") {
@@ -111,7 +111,7 @@ func TestLinksToMissingNotesAreRefused(t *testing.T) {
 	h := newHarness(t)
 
 	var session SessionStartOutput
-	h.call("gandalf_session_start", SessionStartInput{Title: "Work", Tags: []string{"work"}}, &session)
+	h.call("session_start", SessionStartInput{Title: "Work", Tags: []string{"work"}}, &session)
 
 	tests := []struct {
 		name string
@@ -121,13 +121,13 @@ func TestLinksToMissingNotesAreRefused(t *testing.T) {
 	}{
 		{
 			name: "body link from append",
-			tool: "gandalf_note_append",
+			tool: "note_append",
 			args: NoteAppendInput{Ref: session.Ref, Content: "See [[project:nonexistent:design]]."},
 			want: "project:nonexistent:design",
 		},
 		{
 			name: "related on a new note",
-			tool: "gandalf_note_new",
+			tool: "note_new",
 			args: NoteNewInput{
 				Kind: "standard", Title: "Thing", Tags: []string{"standards"},
 				Related: []string{"standard:imaginary"},
@@ -136,7 +136,7 @@ func TestLinksToMissingNotesAreRefused(t *testing.T) {
 		},
 		{
 			name: "body link on a new note",
-			tool: "gandalf_note_new",
+			tool: "note_new",
 			args: NoteNewInput{
 				Kind: "standard", Title: "Other Thing", Tags: []string{"standards"},
 				Content: "Refer to [[standard:also-imaginary]].",
@@ -145,7 +145,7 @@ func TestLinksToMissingNotesAreRefused(t *testing.T) {
 		},
 		{
 			name: "related added by update",
-			tool: "gandalf_note_update",
+			tool: "note_update",
 			args: NoteUpdateInput{Ref: session.Ref, AddRelated: []string{"session:2020-01-01-never-happened"}},
 			want: "session:2020-01-01-never-happened",
 		},
@@ -168,7 +168,7 @@ func TestLinksToMissingNotesAreRefused(t *testing.T) {
 func TestMissingLinksAreReportedTogether(t *testing.T) {
 	h := newHarness(t)
 
-	msg := h.callErr("gandalf_note_new", NoteNewInput{
+	msg := h.callErr("note_new", NoteNewInput{
 		Kind: "standard", Title: "Thing", Tags: []string{"standards"},
 		Related: []string{"standard:missing-one"},
 		Content: "Also [[standard:missing-two]] and [[project:ghost:todo]].",
@@ -187,11 +187,11 @@ func TestNonRefLinksAreLeftAlone(t *testing.T) {
 	h := newHarness(t)
 
 	var session SessionStartOutput
-	h.call("gandalf_session_start", SessionStartInput{Title: "Prose", Tags: []string{"work"}}, &session)
+	h.call("session_start", SessionStartInput{Title: "Prose", Tags: []string{"work"}}, &session)
 
 	const content = "A hand-written link [[Some Other Note]], an array index arr[[0]], " +
 		"and a fenced block:\n\n```\n[[standard:not-translated-in-code]]\n```\n"
-	h.call("gandalf_note_append", NoteAppendInput{Ref: session.Ref, Content: content}, nil)
+	h.call("note_append", NoteAppendInput{Ref: session.Ref, Content: content}, nil)
 
 	raw := diskOf(t, h, session.Ref)
 	for _, want := range []string{
@@ -211,19 +211,19 @@ func TestSeededVaultStillLintsCleanAfterLinking(t *testing.T) {
 	h := newHarness(t)
 
 	var session SessionStartOutput
-	h.call("gandalf_session_start", SessionStartInput{
+	h.call("session_start", SessionStartInput{
 		Title:   "Linked Work",
 		Tags:    []string{"work"},
 		Related: []string{"topic:operating", "standard:language-go"},
 	}, &session)
 
-	h.call("gandalf_note_append", NoteAppendInput{
+	h.call("note_append", NoteAppendInput{
 		Ref:     session.Ref,
 		Content: "Following [[standard:code-quality]].",
 	}, nil)
 
 	var out LintOutput
-	h.call("gandalf_lint", LintInput{}, &out)
+	h.call("lint", LintInput{}, &out)
 	if !out.Clean {
 		t.Errorf("linking produced findings: %+v", out.Findings)
 	}

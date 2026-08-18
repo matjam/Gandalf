@@ -23,7 +23,7 @@ func TestCategoryList(t *testing.T) {
 	populate(t, h)
 
 	var out CategoryListOutput
-	h.call("gandalf_category_list", CategoryListInput{}, &out)
+	h.call("category_list", CategoryListInput{}, &out)
 
 	session := find(t, out, "session")
 	if session.Rule != "dated" || session.RefForm != "session:YYYY-MM-DD-slug" {
@@ -53,7 +53,7 @@ func TestCategoryCreate(t *testing.T) {
 	h := newHarness(t)
 
 	var created CategoryChangeOutput
-	h.call("gandalf_category_create", CategoryCreateInput{
+	h.call("category_create", CategoryCreateInput{
 		Name: "incident", Plural: "incidents", Rule: "dated",
 		Folder: "Incidents", Description: "Something broke and why.",
 		Tags: []string{"incident"},
@@ -66,7 +66,7 @@ func TestCategoryCreate(t *testing.T) {
 	// The new category must be usable immediately: filing, addressing, and
 	// listing all derive from the declaration.
 	var note NoteOutput
-	h.call("gandalf_note_new", NoteNewInput{
+	h.call("note_new", NoteNewInput{
 		Kind: "incident", Title: "Disk Filled Up", Tags: []string{"storage"},
 	}, &note)
 
@@ -83,20 +83,20 @@ func TestCategoryCreate(t *testing.T) {
 	}
 
 	var read NoteOutput
-	h.call("gandalf_note_read", NoteReadInput{Ref: note.Ref}, &read)
+	h.call("note_read", NoteReadInput{Ref: note.Ref}, &read)
 	if read.Title != "Disk Filled Up" {
 		t.Errorf("title = %q", read.Title)
 	}
 
 	var listed ListOutput
-	h.call("gandalf_list", ListInput{Kind: "incidents"}, &listed)
+	h.call("list", ListInput{Kind: "incidents"}, &listed)
 	if listed.Total != 1 {
 		t.Errorf("listed %d incidents, want 1", listed.Total)
 	}
 
 	// And it survives a restart, because it lives in the vault.
 	var again CategoryListOutput
-	h.call("gandalf_category_list", CategoryListInput{}, &again)
+	h.call("category_list", CategoryListInput{}, &again)
 	if find(t, again, "incident").Notes != 1 {
 		t.Error("the new category did not persist with its note")
 	}
@@ -105,14 +105,14 @@ func TestCategoryCreate(t *testing.T) {
 func TestCategoryCreateScoped(t *testing.T) {
 	h := newHarness(t)
 
-	h.call("gandalf_category_create", CategoryCreateInput{
+	h.call("category_create", CategoryCreateInput{
 		Name: "client", Plural: "clients", Rule: "scoped",
 		Folder: "Clients", Description: "Per-client notes.",
 		Facets: []string{"brief", "contact-log"},
 	}, nil)
 
 	var note NoteOutput
-	h.call("gandalf_note_new", NoteNewInput{
+	h.call("note_new", NoteNewInput{
 		Kind: "client", Facet: "contact-log", Scope: "acme",
 		Title: "Acme", Tags: []string{"client"},
 	}, &note)
@@ -171,7 +171,7 @@ func TestCategoryCreateRejects(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if msg := h.callErr("gandalf_category_create", tc.in); !strings.Contains(msg, tc.want) {
+			if msg := h.callErr("category_create", tc.in); !strings.Contains(msg, tc.want) {
 				t.Errorf("error = %q, want it to mention %q", msg, tc.want)
 			}
 		})
@@ -183,14 +183,14 @@ func TestCategoryRetire(t *testing.T) {
 	populate(t, h)
 
 	var out CategoryChangeOutput
-	h.call("gandalf_category_retire", CategoryNameInput{Name: "meeting"}, &out)
+	h.call("category_retire", CategoryNameInput{Name: "meeting"}, &out)
 
 	if !out.Category.Retired {
 		t.Error("the category is not marked retired")
 	}
 
 	// No new notes.
-	if msg := h.callErr("gandalf_note_new", NoteNewInput{
+	if msg := h.callErr("note_new", NoteNewInput{
 		Kind: "meeting", Title: "Another", Tags: []string{"meeting"},
 	}); !strings.Contains(msg, "cannot be created") {
 		t.Errorf("error = %q", msg)
@@ -199,15 +199,15 @@ func TestCategoryRetire(t *testing.T) {
 	// The ones already filed stay readable and writable, which is the whole
 	// difference between retiring and deleting.
 	var listed ListOutput
-	h.call("gandalf_list", ListInput{Kind: "meetings"}, &listed)
+	h.call("list", ListInput{Kind: "meetings"}, &listed)
 	if listed.Total != 1 {
 		t.Fatalf("listed %d meetings, want the existing one", listed.Total)
 	}
 
 	ref := listed.Notes[0].Ref
-	h.call("gandalf_note_append", NoteAppendInput{Ref: ref, Content: "Still editable."}, nil)
+	h.call("note_append", NoteAppendInput{Ref: ref, Content: "Still editable."}, nil)
 
-	if msg := h.callErr("gandalf_category_retire", CategoryNameInput{Name: "meeting"}); !strings.Contains(msg, "already retired") {
+	if msg := h.callErr("category_retire", CategoryNameInput{Name: "meeting"}); !strings.Contains(msg, "already retired") {
 		t.Errorf("error = %q", msg)
 	}
 }
@@ -219,7 +219,7 @@ func TestCategoryDeleteRequiresEmpty(t *testing.T) {
 	h := newHarness(t)
 	populate(t, h)
 
-	msg := h.callErr("gandalf_category_delete", CategoryNameInput{Name: "session"})
+	msg := h.callErr("category_delete", CategoryNameInput{Name: "session"})
 	for _, want := range []string{"still holds", "retire"} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("error = %q, want it to mention %q", msg, want)
@@ -228,7 +228,7 @@ func TestCategoryDeleteRequiresEmpty(t *testing.T) {
 
 	// Sessions are untouched.
 	var listed ListOutput
-	h.call("gandalf_list", ListInput{Kind: "sessions"}, &listed)
+	h.call("list", ListInput{Kind: "sessions"}, &listed)
 	if listed.Total != 2 {
 		t.Errorf("listed %d sessions, want them all still there", listed.Total)
 	}
@@ -237,29 +237,29 @@ func TestCategoryDeleteRequiresEmpty(t *testing.T) {
 func TestCategoryDelete(t *testing.T) {
 	h := newHarness(t)
 
-	h.call("gandalf_category_create", CategoryCreateInput{
+	h.call("category_create", CategoryCreateInput{
 		Name: "incident", Plural: "incidents", Rule: "dated",
 		Folder: "Incidents", Description: "Something broke.",
 	}, nil)
 
 	var out CategoryChangeOutput
-	h.call("gandalf_category_delete", CategoryNameInput{Name: "incident"}, &out)
+	h.call("category_delete", CategoryNameInput{Name: "incident"}, &out)
 	if out.Category.Name != "incident" {
 		t.Errorf("deleted %q", out.Category.Name)
 	}
 
 	var listing CategoryListOutput
-	h.call("gandalf_category_list", CategoryListInput{}, &listing)
+	h.call("category_list", CategoryListInput{}, &listing)
 	for _, c := range listing.Categories {
 		if c.Name == "incident" {
 			t.Error("the deleted category is still declared")
 		}
 	}
 
-	if msg := h.callErr("gandalf_category_delete", CategoryNameInput{Name: "incident"}); !strings.Contains(msg, "no category") {
+	if msg := h.callErr("category_delete", CategoryNameInput{Name: "incident"}); !strings.Contains(msg, "no category") {
 		t.Errorf("error = %q", msg)
 	}
-	if msg := h.callErr("gandalf_note_new", NoteNewInput{Kind: "incident", Title: "Gone"}); !strings.Contains(msg, "unknown category") {
+	if msg := h.callErr("note_new", NoteNewInput{Kind: "incident", Title: "Gone"}); !strings.Contains(msg, "unknown category") {
 		t.Errorf("error = %q", msg)
 	}
 }
@@ -270,17 +270,17 @@ func TestSeededVaultStaysCleanAfterCategoryChanges(t *testing.T) {
 	h := newHarness(t)
 	populate(t, h)
 
-	h.call("gandalf_category_create", CategoryCreateInput{
+	h.call("category_create", CategoryCreateInput{
 		Name: "incident", Plural: "incidents", Rule: "dated",
 		Folder: "Incidents", Description: "Something broke.",
 	}, nil)
-	h.call("gandalf_note_new", NoteNewInput{
+	h.call("note_new", NoteNewInput{
 		Kind: "incident", Title: "Disk Filled Up", Tags: []string{"storage"},
 	}, nil)
-	h.call("gandalf_category_retire", CategoryNameInput{Name: "meeting"}, nil)
+	h.call("category_retire", CategoryNameInput{Name: "meeting"}, nil)
 
 	var out LintOutput
-	h.call("gandalf_lint", LintInput{}, &out)
+	h.call("lint", LintInput{}, &out)
 	if !out.Clean {
 		t.Errorf("changing categories left the vault unclean: %+v", out.Findings)
 	}

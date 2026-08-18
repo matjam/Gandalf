@@ -21,7 +21,7 @@ yours.
 
 ## How It Works
 
-The agent calls `gandalf_boot` at the start of a session, which returns the operating
+The agent calls `boot` at the start of a session, which returns the operating
 contract and a list of topics it can fetch as the work demands. Notes are created and
 updated through tool calls that own the metadata, so frontmatter stays valid without
 anyone maintaining it.

@@ -78,10 +78,22 @@ func updateVault(args []string) error {
 		return err
 	}
 
+	// Documents Update leaves alone still name the tools of the release that
+	// seeded them. Rewriting just the identifiers keeps an edited document
+	// pointing at tools that exist, without adopting text over the user's
+	// edits.
+	renamed, err := instructions.RenameTools(v, schema.Today())
+	if err != nil {
+		return err
+	}
+
 	for _, r := range results {
 		if r.Updated {
 			fmt.Println("updated", r.Doc.Path)
 		}
+	}
+	for _, path := range renamed {
+		fmt.Println("renamed tools in", path)
 	}
 
 	held := instructions.HeldBack(results)

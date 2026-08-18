@@ -150,7 +150,7 @@ func TestInlineCodeIsNotALink(t *testing.T) {
 		},
 		{
 			name:  "backticks around other text",
-			in:    "Call `gandalf_list` before [[Real Note]].",
+			in:    "Call `list` before [[Real Note]].",
 			links: []string{"Real Note"},
 		},
 	}

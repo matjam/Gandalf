@@ -63,7 +63,7 @@ func (s *Server) categoryList(ctx context.Context, _ *sdk.CallToolRequest, _ Cat
 // CategoryCreateInput declares a new kind of note.
 type CategoryCreateInput struct {
 	Name   string `json:"name" jsonschema:"singular, lowercase and hyphenated; used as the first field of a ref"`
-	Plural string `json:"plural" jsonschema:"what gandalf_list is asked for"`
+	Plural string `json:"plural" jsonschema:"what list is asked for"`
 
 	Rule string `json:"rule" jsonschema:"dated for notes filed by day, scoped for notes grouped under a name, named for one file per slug, or singleton for a single file"`
 

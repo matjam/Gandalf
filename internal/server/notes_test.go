@@ -13,7 +13,7 @@ func TestSessionStart(t *testing.T) {
 	h := newHarness(t)
 
 	var out SessionStartOutput
-	h.call("gandalf_session_start", SessionStartInput{
+	h.call("session_start", SessionStartInput{
 		Title: "Memory Toolset Design",
 		Tags:  []string{"agent", "memory"},
 	}, &out)
@@ -28,7 +28,7 @@ func TestSessionStart(t *testing.T) {
 
 	// The ref must address the note it just created.
 	var note NoteOutput
-	h.call("gandalf_note_read", NoteReadInput{Ref: out.Ref}, &note)
+	h.call("note_read", NoteReadInput{Ref: out.Ref}, &note)
 	if note.Title != "Memory Toolset Design" {
 		t.Errorf("title = %q", note.Title)
 	}
@@ -47,15 +47,15 @@ func TestSessionStartTwiceContinues(t *testing.T) {
 	h := newHarness(t)
 
 	var first SessionStartOutput
-	h.call("gandalf_session_start", SessionStartInput{Title: "Same Work", Tags: []string{"work"}}, &first)
+	h.call("session_start", SessionStartInput{Title: "Same Work", Tags: []string{"work"}}, &first)
 
-	h.call("gandalf_note_append", NoteAppendInput{
+	h.call("note_append", NoteAppendInput{
 		Ref:     first.Ref,
 		Content: "Something worth keeping.",
 	}, nil)
 
 	var second SessionStartOutput
-	h.call("gandalf_session_start", SessionStartInput{Title: "Same Work", Tags: []string{"work"}}, &second)
+	h.call("session_start", SessionStartInput{Title: "Same Work", Tags: []string{"work"}}, &second)
 
 	if second.Ref != first.Ref {
 		t.Fatalf("second ref = %q, want %q", second.Ref, first.Ref)
@@ -65,7 +65,7 @@ func TestSessionStartTwiceContinues(t *testing.T) {
 	}
 
 	var note NoteOutput
-	h.call("gandalf_note_read", NoteReadInput{Ref: first.Ref}, &note)
+	h.call("note_read", NoteReadInput{Ref: first.Ref}, &note)
 	if !strings.Contains(note.Content, "Something worth keeping.") {
 		t.Error("the existing session note was overwritten")
 	}
@@ -76,10 +76,10 @@ func TestBootReportsOpenSessions(t *testing.T) {
 	h := newHarness(t)
 
 	var started SessionStartOutput
-	h.call("gandalf_session_start", SessionStartInput{Title: "Open Work", Tags: []string{"work"}}, &started)
+	h.call("session_start", SessionStartInput{Title: "Open Work", Tags: []string{"work"}}, &started)
 
 	var out BootOutput
-	h.call("gandalf_boot", BootInput{}, &out)
+	h.call("boot", BootInput{}, &out)
 
 	if len(out.OpenToday) != 1 {
 		t.Fatalf("open sessions = %+v, want exactly one", out.OpenToday)
@@ -92,12 +92,12 @@ func TestBootReportsOpenSessions(t *testing.T) {
 	}
 
 	// Once complete, it stops being offered for resumption.
-	h.call("gandalf_note_update", NoteUpdateInput{
+	h.call("note_update", NoteUpdateInput{
 		Ref:    started.Ref,
 		Status: string(schema.StatusComplete),
 	}, nil)
 
-	h.call("gandalf_boot", BootInput{}, &out)
+	h.call("boot", BootInput{}, &out)
 	if len(out.OpenToday) != 0 {
 		t.Errorf("a completed session is still reported open: %+v", out.OpenToday)
 	}
@@ -141,7 +141,7 @@ func TestNoteNew(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			var out NoteOutput
-			h.call("gandalf_note_new", tc.in, &out)
+			h.call("note_new", tc.in, &out)
 
 			if out.Ref != tc.wantRef {
 				t.Errorf("ref = %q, want %q", out.Ref, tc.wantRef)
@@ -149,7 +149,7 @@ func TestNoteNew(t *testing.T) {
 
 			// Whatever it returned must be readable by that ref.
 			var read NoteOutput
-			h.call("gandalf_note_read", NoteReadInput{Ref: out.Ref}, &read)
+			h.call("note_read", NoteReadInput{Ref: out.Ref}, &read)
 			if read.Title != tc.in.Title {
 				t.Errorf("title = %q, want %q", read.Title, tc.in.Title)
 			}
@@ -178,7 +178,7 @@ func TestNoteNewRejects(t *testing.T) {
 		{
 			name: "session, which has its own tool",
 			in:   NoteNewInput{Kind: "session", Title: "Work"},
-			want: "gandalf_session_start",
+			want: "session_start",
 		},
 		{
 			name: "unusable title",
@@ -194,7 +194,7 @@ func TestNoteNewRejects(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if msg := h.callErr("gandalf_note_new", tc.in); !strings.Contains(msg, tc.want) {
+			if msg := h.callErr("note_new", tc.in); !strings.Contains(msg, tc.want) {
 				t.Errorf("error = %q, want it to mention %q", msg, tc.want)
 			}
 		})
@@ -207,9 +207,9 @@ func TestNoteNewRefusesToReplace(t *testing.T) {
 	h := newHarness(t)
 
 	in := NoteNewInput{Kind: "project", Facet: "decisions", Title: "Gandalf", Scope: "gandalf", Tags: []string{"decisions"}}
-	h.call("gandalf_note_new", in, nil)
+	h.call("note_new", in, nil)
 
-	msg := h.callErr("gandalf_note_new", in)
+	msg := h.callErr("note_new", in)
 	if !strings.Contains(msg, "already exists") || !strings.Contains(msg, "append") {
 		t.Errorf("error = %q, want it to refuse and point at append", msg)
 	}
@@ -219,12 +219,12 @@ func TestNoteAppend(t *testing.T) {
 	h := newHarness(t)
 
 	var created NoteOutput
-	h.call("gandalf_note_new", NoteNewInput{
+	h.call("note_new", NoteNewInput{
 		Kind: "project", Facet: "decisions", Title: "Gandalf", Scope: "gandalf", Tags: []string{"decisions"},
 	}, &created)
 
 	var out NoteOutput
-	h.call("gandalf_note_append", NoteAppendInput{
+	h.call("note_append", NoteAppendInput{
 		Ref:     created.Ref,
 		Heading: "2026-08-17 — Refs, not paths",
 		Content: "Tools address notes by what they are.",
@@ -241,7 +241,7 @@ func TestNoteAppend(t *testing.T) {
 	}
 
 	// A second append keeps the first.
-	h.call("gandalf_note_append", NoteAppendInput{Ref: created.Ref, Content: "A later decision."}, &out)
+	h.call("note_append", NoteAppendInput{Ref: created.Ref, Content: "A later decision."}, &out)
 	if !strings.Contains(out.Content, "Tools address notes by what they are.") {
 		t.Error("the second append overwrote the first")
 	}
@@ -254,9 +254,9 @@ func TestNoteAppendRejectsEmpty(t *testing.T) {
 	h := newHarness(t)
 
 	var created SessionStartOutput
-	h.call("gandalf_session_start", SessionStartInput{Title: "Work", Tags: []string{"work"}}, &created)
+	h.call("session_start", SessionStartInput{Title: "Work", Tags: []string{"work"}}, &created)
 
-	if msg := h.callErr("gandalf_note_append", NoteAppendInput{Ref: created.Ref, Content: "   "}); !strings.Contains(msg, "nothing to append") {
+	if msg := h.callErr("note_append", NoteAppendInput{Ref: created.Ref, Content: "   "}); !strings.Contains(msg, "nothing to append") {
 		t.Errorf("error = %q", msg)
 	}
 }
@@ -265,12 +265,12 @@ func TestNoteUpdate(t *testing.T) {
 	h := newHarness(t)
 
 	var created NoteOutput
-	h.call("gandalf_note_new", NoteNewInput{
+	h.call("note_new", NoteNewInput{
 		Kind: "standard", Title: "Language Rust", Tags: []string{"standards", "temporary"},
 	}, &created)
 
 	var out NoteOutput
-	h.call("gandalf_note_update", NoteUpdateInput{
+	h.call("note_update", NoteUpdateInput{
 		Ref:        created.Ref,
 		AddTags:    []string{"language-rust"},
 		RemoveTags: []string{"temporary"},
@@ -303,12 +303,12 @@ func TestNoteUpdateRejectsInvalid(t *testing.T) {
 	h := newHarness(t)
 
 	var created NoteOutput
-	h.call("gandalf_note_new", NoteNewInput{Kind: "standard", Title: "Thing", Tags: []string{"standards"}}, &created)
+	h.call("note_new", NoteNewInput{Kind: "standard", Title: "Thing", Tags: []string{"standards"}}, &created)
 
-	if msg := h.callErr("gandalf_note_update", NoteUpdateInput{Ref: created.Ref, Status: "wip"}); !strings.Contains(msg, "status") {
+	if msg := h.callErr("note_update", NoteUpdateInput{Ref: created.Ref, Status: "wip"}); !strings.Contains(msg, "status") {
 		t.Errorf("error = %q, want it to reject the status", msg)
 	}
-	if msg := h.callErr("gandalf_note_update", NoteUpdateInput{
+	if msg := h.callErr("note_update", NoteUpdateInput{
 		Ref:     created.Ref,
 		AddTags: []string{"Not A Tag"},
 	}); !strings.Contains(msg, "invalid") {
@@ -334,7 +334,7 @@ func TestPathRefsAreReadOnly(t *testing.T) {
 	const ref = "path:Personal/Something"
 
 	var out NoteOutput
-	h.call("gandalf_note_read", NoteReadInput{Ref: ref}, &out)
+	h.call("note_read", NoteReadInput{Ref: ref}, &out)
 	if out.Title != "Not A Convention" {
 		t.Errorf("title = %q", out.Title)
 	}
@@ -343,8 +343,8 @@ func TestPathRefsAreReadOnly(t *testing.T) {
 		tool string
 		args any
 	}{
-		{tool: "gandalf_note_append", args: NoteAppendInput{Ref: ref, Content: "More."}},
-		{tool: "gandalf_note_update", args: NoteUpdateInput{Ref: ref, AddTags: []string{"edited"}}},
+		{tool: "note_append", args: NoteAppendInput{Ref: ref, Content: "More."}},
+		{tool: "note_update", args: NoteUpdateInput{Ref: ref, AddTags: []string{"edited"}}},
 	} {
 		t.Run(tc.tool, func(t *testing.T) {
 			if msg := h.callErr(tc.tool, tc.args); !strings.Contains(msg, "filing conventions") {
@@ -364,7 +364,7 @@ func TestUnknownRefsAreRejected(t *testing.T) {
 		"session:latest", // nothing to be latest of yet
 	} {
 		t.Run(ref, func(t *testing.T) {
-			if msg := h.callErr("gandalf_note_read", NoteReadInput{Ref: ref}); msg == "" {
+			if msg := h.callErr("note_read", NoteReadInput{Ref: ref}); msg == "" {
 				t.Error("no error message")
 			}
 		})
@@ -375,11 +375,11 @@ func TestSessionLatest(t *testing.T) {
 	h := newHarness(t)
 
 	var first, second SessionStartOutput
-	h.call("gandalf_session_start", SessionStartInput{Title: "Earlier Work", Tags: []string{"work"}}, &first)
-	h.call("gandalf_session_start", SessionStartInput{Title: "Later Work", Tags: []string{"work"}}, &second)
+	h.call("session_start", SessionStartInput{Title: "Earlier Work", Tags: []string{"work"}}, &first)
+	h.call("session_start", SessionStartInput{Title: "Later Work", Tags: []string{"work"}}, &second)
 
 	var out NoteOutput
-	h.call("gandalf_note_read", NoteReadInput{Ref: "session:latest"}, &out)
+	h.call("note_read", NoteReadInput{Ref: "session:latest"}, &out)
 
 	// Same-day names sort by slug, so assert only that it resolved to one of
 	// them rather than pretending the ordering means recency within a day.

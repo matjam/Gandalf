@@ -13,7 +13,7 @@ func TestPathsAreRejectedWithGuidance(t *testing.T) {
 	h := newHarness(t)
 
 	var session SessionStartOutput
-	h.call("gandalf_session_start", SessionStartInput{Title: "Real Work", Tags: []string{"work"}}, &session)
+	h.call("session_start", SessionStartInput{Title: "Real Work", Tags: []string{"work"}}, &session)
 
 	tests := []struct {
 		name    string
@@ -52,7 +52,7 @@ func TestPathsAreRejectedWithGuidance(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			msg := h.callErr("gandalf_note_read", NoteReadInput{Ref: tc.ref})
+			msg := h.callErr("note_read", NoteReadInput{Ref: tc.ref})
 
 			if !strings.Contains(msg, "file path") {
 				t.Errorf("message does not say the input was a path: %q", msg)
@@ -73,7 +73,7 @@ func TestPathsAreRejectedWithGuidance(t *testing.T) {
 func TestUnknownKindListsTheValidOnes(t *testing.T) {
 	h := newHarness(t)
 
-	msg := h.callErr("gandalf_note_read", NoteReadInput{Ref: "diary:today"})
+	msg := h.callErr("note_read", NoteReadInput{Ref: "diary:today"})
 	for _, want := range []string{"unknown category", "session", "project", "standard"} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("message does not mention %q: %q", want, msg)
@@ -89,9 +89,9 @@ func TestWriteToolsRejectPathsToo(t *testing.T) {
 		tool string
 		args any
 	}{
-		{tool: "gandalf_note_append", args: NoteAppendInput{Ref: "Standards/language-go.md", Content: "More."}},
-		{tool: "gandalf_note_update", args: NoteUpdateInput{Ref: "Standards/language-go.md", Status: "complete"}},
-		{tool: "gandalf_lint", args: LintInput{Ref: "Standards/language-go.md"}},
+		{tool: "note_append", args: NoteAppendInput{Ref: "Standards/language-go.md", Content: "More."}},
+		{tool: "note_update", args: NoteUpdateInput{Ref: "Standards/language-go.md", Status: "complete"}},
+		{tool: "lint", args: LintInput{Ref: "Standards/language-go.md"}},
 	} {
 		t.Run(tc.tool, func(t *testing.T) {
 			msg := h.callErr(tc.tool, tc.args)

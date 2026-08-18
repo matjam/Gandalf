@@ -49,17 +49,17 @@ func TestSearch(t *testing.T) {
 	h := searchHarness(t)
 
 	var session SessionStartOutput
-	h.call("gandalf_session_start", SessionStartInput{
+	h.call("session_start", SessionStartInput{
 		Title: "Cache Invalidation", Tags: []string{"caching"},
 	}, &session)
-	h.call("gandalf_note_append", NoteAppendInput{
+	h.call("note_append", NoteAppendInput{
 		Ref:     session.Ref,
 		Heading: "Stampede",
 		Content: "Many readers missing at once overwhelm the origin. Fixed with a single-flight lock.",
 	}, nil)
 
 	var out SearchOutput
-	h.call("gandalf_search", SearchInput{Query: "readers overwhelming the origin"}, &out)
+	h.call("search", SearchInput{Query: "readers overwhelming the origin"}, &out)
 
 	if len(out.Hits) == 0 {
 		t.Fatal("no hits")
@@ -91,7 +91,7 @@ func TestSearchSeesRecentWrites(t *testing.T) {
 	h := searchHarness(t)
 
 	var out SearchOutput
-	h.call("gandalf_search", SearchInput{Query: "quorum reconciliation"}, &out)
+	h.call("search", SearchInput{Query: "quorum reconciliation"}, &out)
 	for _, hit := range out.Hits {
 		if strings.Contains(hit.Snippet, "quorum reconciliation") {
 			t.Fatal("found the note before it was written")
@@ -99,13 +99,13 @@ func TestSearchSeesRecentWrites(t *testing.T) {
 	}
 
 	var session SessionStartOutput
-	h.call("gandalf_session_start", SessionStartInput{Title: "Quorum Work", Tags: []string{"work"}}, &session)
-	h.call("gandalf_note_append", NoteAppendInput{
+	h.call("session_start", SessionStartInput{Title: "Quorum Work", Tags: []string{"work"}}, &session)
+	h.call("note_append", NoteAppendInput{
 		Ref:     session.Ref,
 		Content: "Settled on quorum reconciliation across the replicas.",
 	}, nil)
 
-	h.call("gandalf_search", SearchInput{Query: "quorum reconciliation"}, &out)
+	h.call("search", SearchInput{Query: "quorum reconciliation"}, &out)
 
 	for _, hit := range out.Hits {
 		if hit.Ref == session.Ref {
@@ -118,12 +118,12 @@ func TestSearchSeesRecentWrites(t *testing.T) {
 func TestSearchFiltersByCategory(t *testing.T) {
 	h := searchHarness(t)
 
-	h.call("gandalf_session_start", SessionStartInput{
+	h.call("session_start", SessionStartInput{
 		Title: "Migration Work", Tags: []string{"work"},
 	}, nil)
 
 	var out SearchOutput
-	h.call("gandalf_search", SearchInput{Query: "migrations run before traffic", Kinds: []string{"standard"}}, &out)
+	h.call("search", SearchInput{Query: "migrations run before traffic", Kinds: []string{"standard"}}, &out)
 
 	for _, hit := range out.Hits {
 		if !strings.HasPrefix(hit.Ref, "standard:") {
@@ -136,7 +136,7 @@ func TestSearchFindsSeededStandards(t *testing.T) {
 	h := searchHarness(t)
 
 	var out SearchOutput
-	h.call("gandalf_search", SearchInput{Query: "migrations run before the service accepts traffic"}, &out)
+	h.call("search", SearchInput{Query: "migrations run before the service accepts traffic"}, &out)
 
 	if len(out.Hits) == 0 {
 		t.Fatal("no hits over the seeded vault")
@@ -149,7 +149,7 @@ func TestSearchFindsSeededStandards(t *testing.T) {
 func TestSearchRejectsEmptyQuery(t *testing.T) {
 	h := searchHarness(t)
 
-	if msg := h.callErr("gandalf_search", SearchInput{Query: "   "}); !strings.Contains(msg, "look for") {
+	if msg := h.callErr("search", SearchInput{Query: "   "}); !strings.Contains(msg, "look for") {
 		t.Errorf("error = %q", msg)
 	}
 }
@@ -158,7 +158,7 @@ func TestSearchLimit(t *testing.T) {
 	h := searchHarness(t)
 
 	var out SearchOutput
-	h.call("gandalf_search", SearchInput{Query: "the", Limit: 3}, &out)
+	h.call("search", SearchInput{Query: "the", Limit: 3}, &out)
 	if len(out.Hits) > 3 {
 		t.Errorf("got %d hits, want at most 3", len(out.Hits))
 	}
@@ -170,8 +170,8 @@ func TestSearchLimit(t *testing.T) {
 func TestSearchUnavailableDegradesOnlySearch(t *testing.T) {
 	h := newHarness(t) // built with New, so no embedder
 
-	msg := h.callErr("gandalf_search", SearchInput{Query: "anything"})
-	for _, want := range []string{"not configured", "gandalf_list"} {
+	msg := h.callErr("search", SearchInput{Query: "anything"})
+	for _, want := range []string{"not configured", "list"} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("error = %q, want it to mention %q", msg, want)
 		}
@@ -179,17 +179,17 @@ func TestSearchUnavailableDegradesOnlySearch(t *testing.T) {
 
 	// Everything else works.
 	var boot BootOutput
-	h.call("gandalf_boot", BootInput{}, &boot)
+	h.call("boot", BootInput{}, &boot)
 	if len(boot.Contract) == 0 {
 		t.Error("boot broke without an embedder")
 	}
 
 	var session SessionStartOutput
-	h.call("gandalf_session_start", SessionStartInput{Title: "Work", Tags: []string{"work"}}, &session)
-	h.call("gandalf_note_append", NoteAppendInput{Ref: session.Ref, Content: "Still writing."}, nil)
+	h.call("session_start", SessionStartInput{Title: "Work", Tags: []string{"work"}}, &session)
+	h.call("note_append", NoteAppendInput{Ref: session.Ref, Content: "Still writing."}, nil)
 
 	var lint LintOutput
-	h.call("gandalf_lint", LintInput{}, &lint)
+	h.call("lint", LintInput{}, &lint)
 	if !lint.Clean {
 		t.Errorf("lint broke without an embedder: %+v", lint.Findings)
 	}
@@ -200,7 +200,7 @@ func TestSearchUnavailableDegradesOnlySearch(t *testing.T) {
 func TestIndexIsNotAVaultNote(t *testing.T) {
 	h := searchHarness(t)
 
-	h.call("gandalf_search", SearchInput{Query: "anything at all"}, nil)
+	h.call("search", SearchInput{Query: "anything at all"}, nil)
 
 	paths, err := h.vault.List()
 	if err != nil {
@@ -213,7 +213,7 @@ func TestIndexIsNotAVaultNote(t *testing.T) {
 	}
 
 	var lint LintOutput
-	h.call("gandalf_lint", LintInput{}, &lint)
+	h.call("lint", LintInput{}, &lint)
 	if !lint.Clean {
 		t.Errorf("the index produced lint findings: %+v", lint.Findings)
 	}
@@ -242,12 +242,12 @@ func TestBootReportsSearchStatus(t *testing.T) {
 		h := newHarness(t)
 
 		var out BootOutput
-		h.call("gandalf_boot", BootInput{}, &out)
+		h.call("boot", BootInput{}, &out)
 
 		if out.Search.State != IndexUnavailable {
 			t.Errorf("state = %q, want %q", out.Search.State, IndexUnavailable)
 		}
-		if !strings.Contains(out.Search.Note, "gandalf_list") {
+		if !strings.Contains(out.Search.Note, "list") {
 			t.Error("an unavailable index should point at the tool that still works")
 		}
 	})
@@ -256,7 +256,7 @@ func TestBootReportsSearchStatus(t *testing.T) {
 		h := searchHarness(t)
 
 		var out BootOutput
-		h.call("gandalf_boot", BootInput{}, &out)
+		h.call("boot", BootInput{}, &out)
 
 		if out.Search.State == IndexUnavailable {
 			t.Error("search is configured but was reported unavailable")
@@ -300,7 +300,7 @@ func TestSearchAnswersWhileTheIndexIsStillBuilding(t *testing.T) {
 	done := make(chan SearchOutput, 1)
 	go func() {
 		var out SearchOutput
-		h.call("gandalf_search", SearchInput{Query: "shipping"}, &out)
+		h.call("search", SearchInput{Query: "shipping"}, &out)
 		done <- out
 	}()
 

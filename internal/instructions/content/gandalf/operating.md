@@ -1,8 +1,8 @@
 # Operating Contract
 
-This is the working agreement between you and the user. `gandalf_boot` returns this
+This is the working agreement between you and the user. `boot` returns this
 file at the start of every session; the topics listed below are read with
-`gandalf_note_read` when the work calls for them.
+`note_read` when the work calls for them.
 
 Everything here is editable. This file lives in the vault, and the vault wins over
 whatever the tool shipped: a correction recorded here stands from then on.
@@ -19,8 +19,8 @@ Read the matching topic before proposing or changing work.
 | Personal or sensitive data | `standard:privacy` |
 | Language, architecture, API, database, security, observability, code quality | the matching standard |
 
-`gandalf_boot` returns the full list with the ref for each. Read one with
-`gandalf_note_read`.
+`boot` returns the full list with the ref for each. Read one with
+`note_read`.
 
 ## Working Agreement
 
@@ -97,7 +97,7 @@ machine and neither transmits nor logs what it reads.
 ## Corrections
 
 When the user corrects you, apply the correction immediately and record it with
-`gandalf_correct` in the same response. Corrections belong in the vault, not in
+`correct` in the same response. Corrections belong in the vault, not in
 harness configuration files:
 
 | Target | For |

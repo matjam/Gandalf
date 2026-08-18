@@ -14,7 +14,7 @@ func TestLintCleanVault(t *testing.T) {
 	h := newHarness(t)
 
 	var out LintOutput
-	h.call("gandalf_lint", LintInput{}, &out)
+	h.call("lint", LintInput{}, &out)
 
 	if !out.Clean {
 		t.Errorf("a seeded vault is not clean: %+v", out.Findings)
@@ -35,7 +35,7 @@ func TestLintReportsRefsNotPaths(t *testing.T) {
 	}
 
 	var out LintOutput
-	h.call("gandalf_lint", LintInput{}, &out)
+	h.call("lint", LintInput{}, &out)
 
 	if out.Clean {
 		t.Fatal("lint found nothing")
@@ -51,7 +51,7 @@ func TestLintReportsRefsNotPaths(t *testing.T) {
 
 			// The ref it reported must be usable against another tool.
 			var note NoteOutput
-			h.call("gandalf_note_read", NoteReadInput{Ref: f.Ref}, &note)
+			h.call("note_read", NoteReadInput{Ref: f.Ref}, &note)
 			if note.Title != "Broken" {
 				t.Errorf("title = %q", note.Title)
 			}
@@ -66,12 +66,12 @@ func TestLintSingleNote(t *testing.T) {
 	h := newHarness(t)
 
 	var created NoteOutput
-	h.call("gandalf_note_new", NoteNewInput{
+	h.call("note_new", NoteNewInput{
 		Kind: "standard", Title: "Fine", Tags: []string{"standards"},
 	}, &created)
 
 	var out LintOutput
-	h.call("gandalf_lint", LintInput{Ref: created.Ref}, &out)
+	h.call("lint", LintInput{Ref: created.Ref}, &out)
 	if !out.Clean {
 		t.Errorf("a tool-created note failed lint: %+v", out.Findings)
 	}
@@ -83,7 +83,7 @@ func TestCorrect(t *testing.T) {
 	const guidance = "Prefer table-driven tests over repeated near-identical cases."
 
 	var out CorrectOutput
-	h.call("gandalf_correct", CorrectInput{
+	h.call("correct", CorrectInput{
 		Target:   "topic:code-quality",
 		Guidance: guidance,
 		Reason:   "Three near-identical tests were written where a table would have been clearer.",
@@ -99,7 +99,7 @@ func TestCorrect(t *testing.T) {
 	}
 
 	var standard NoteOutput
-	h.call("gandalf_note_read", NoteReadInput{Ref: "topic:code-quality"}, &standard)
+	h.call("note_read", NoteReadInput{Ref: "topic:code-quality"}, &standard)
 	if !strings.Contains(standard.Content, guidance) {
 		t.Error("the guidance was not written to the standard")
 	}
@@ -110,7 +110,7 @@ func TestCorrect(t *testing.T) {
 	// The reasoning goes to the history, and only there: the contract is read
 	// every session and the incident behind a rule is not needed then.
 	var history NoteOutput
-	h.call("gandalf_note_read", NoteReadInput{Ref: "topic:corrections"}, &history)
+	h.call("note_read", NoteReadInput{Ref: "topic:corrections"}, &history)
 	if !strings.Contains(history.Content, "Three near-identical tests") {
 		t.Error("the reason was not recorded in the history")
 	}
@@ -125,7 +125,7 @@ func TestCorrectDefaultsToTheContract(t *testing.T) {
 	const guidance = "Never comment on how long a session has run."
 
 	var out CorrectOutput
-	h.call("gandalf_correct", CorrectInput{Guidance: guidance}, &out)
+	h.call("correct", CorrectInput{Guidance: guidance}, &out)
 
 	if out.Ref != "topic:operating" {
 		t.Errorf("ref = %q, want the contract", out.Ref)
@@ -136,7 +136,7 @@ func TestCorrectDefaultsToTheContract(t *testing.T) {
 
 	// A correction must reach the model on the next boot, or it did nothing.
 	var boot BootOutput
-	h.call("gandalf_boot", BootInput{}, &boot)
+	h.call("boot", BootInput{}, &boot)
 	for _, doc := range boot.Contract {
 		if doc.ID == "operating" && strings.Contains(doc.Content, guidance) {
 			return
@@ -148,10 +148,10 @@ func TestCorrectDefaultsToTheContract(t *testing.T) {
 func TestCorrectRejects(t *testing.T) {
 	h := newHarness(t)
 
-	if msg := h.callErr("gandalf_correct", CorrectInput{Target: "topic:operating"}); !strings.Contains(msg, "guidance") {
+	if msg := h.callErr("correct", CorrectInput{Target: "topic:operating"}); !strings.Contains(msg, "guidance") {
 		t.Errorf("error = %q, want it to require guidance", msg)
 	}
-	if msg := h.callErr("gandalf_correct", CorrectInput{
+	if msg := h.callErr("correct", CorrectInput{
 		Target:   "topic:nonexistent",
 		Guidance: "Something.",
 	}); !strings.Contains(msg, "correction target") {
@@ -165,14 +165,14 @@ func TestCorrectionSurvivesReseeding(t *testing.T) {
 	h := newHarness(t)
 
 	const guidance = "Always run the full suite before pushing."
-	h.call("gandalf_correct", CorrectInput{Target: "topic:shipping", Guidance: guidance}, nil)
+	h.call("correct", CorrectInput{Target: "topic:shipping", Guidance: guidance}, nil)
 
 	if _, err := instructions.Seed(h.vault, schema.Today(), false); err != nil {
 		t.Fatalf("reseed: %v", err)
 	}
 
 	var out NoteOutput
-	h.call("gandalf_note_read", NoteReadInput{Ref: "topic:shipping"}, &out)
+	h.call("note_read", NoteReadInput{Ref: "topic:shipping"}, &out)
 	if !strings.Contains(out.Content, guidance) {
 		t.Error("re-seeding reverted a correction")
 	}
@@ -189,10 +189,10 @@ func TestCorrectFilesUnderItsOwnHeading(t *testing.T) {
 
 	const guidance = "Keep personal projects outside the work source tree."
 
-	h.call("gandalf_correct", CorrectInput{Guidance: guidance}, nil)
+	h.call("correct", CorrectInput{Guidance: guidance}, nil)
 
 	var contract NoteOutput
-	h.call("gandalf_note_read", NoteReadInput{Ref: "topic:operating"}, &contract)
+	h.call("note_read", NoteReadInput{Ref: "topic:operating"}, &contract)
 
 	heading := "## " + CorrectionsSection
 	at := strings.Index(contract.Content, heading)
@@ -213,9 +213,9 @@ func TestCorrectFilesUnderItsOwnHeading(t *testing.T) {
 
 	// A second correction joins the first rather than starting a new section.
 	const second = "Say what you verified, not what you assume."
-	h.call("gandalf_correct", CorrectInput{Guidance: second}, nil)
+	h.call("correct", CorrectInput{Guidance: second}, nil)
 
-	h.call("gandalf_note_read", NoteReadInput{Ref: "topic:operating"}, &contract)
+	h.call("note_read", NoteReadInput{Ref: "topic:operating"}, &contract)
 
 	// Count heading lines, not substrings: the contract names the section in
 	// its own prose, and an inline mention is not a second section.
@@ -240,14 +240,14 @@ func TestCorrectHonoursAnExplicitSection(t *testing.T) {
 
 	const guidance = "Run the race detector in CI."
 
-	h.call("gandalf_correct", CorrectInput{
+	h.call("correct", CorrectInput{
 		Target:   "topic:shipping",
 		Guidance: guidance,
 		Section:  "Verification",
 	}, nil)
 
 	var topic NoteOutput
-	h.call("gandalf_note_read", NoteReadInput{Ref: "topic:shipping"}, &topic)
+	h.call("note_read", NoteReadInput{Ref: "topic:shipping"}, &topic)
 
 	if strings.Contains(topic.Content, CorrectionsSection) {
 		t.Error("an explicit section was ignored in favour of the catch-all")

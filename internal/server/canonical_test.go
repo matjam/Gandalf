@@ -56,7 +56,7 @@ func TestBootTopicsUseCanonicalRefs(t *testing.T) {
 	h := newHarness(t)
 
 	var boot BootOutput
-	h.call("gandalf_boot", BootInput{}, &boot)
+	h.call("boot", BootInput{}, &boot)
 
 	for _, topic := range boot.Topics {
 		ref, _, err := h.serverRef(topic.Ref)

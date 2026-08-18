@@ -64,7 +64,7 @@ func (s *Server) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchIn
 	if s.embedder == nil {
 		return nil, SearchOutput{}, fmt.Errorf(
 			"search is not configured: start the server with an embedding model, " +
-				"or use gandalf_list and gandalf_lint to find notes by name")
+				"or use list and lint to find notes by name")
 	}
 
 	// Wait for the background pass, but only so long. A cold vault takes

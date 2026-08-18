@@ -11,19 +11,19 @@ func TestDeleteRefusesWhenReferenced(t *testing.T) {
 	h := newHarness(t)
 
 	var session SessionStartOutput
-	h.call("gandalf_session_start", SessionStartInput{Title: "Work", Tags: []string{"work"}}, &session)
+	h.call("session_start", SessionStartInput{Title: "Work", Tags: []string{"work"}}, &session)
 
 	var standard NoteOutput
-	h.call("gandalf_note_new", NoteNewInput{
+	h.call("note_new", NoteNewInput{
 		Kind: "standard", Title: "House Style", Tags: []string{"standards"},
 	}, &standard)
 
-	h.call("gandalf_note_append", NoteAppendInput{
+	h.call("note_append", NoteAppendInput{
 		Ref:     session.Ref,
 		Content: "Wrote it up as [[standard:house-style]].",
 	}, nil)
 
-	msg := h.callErr("gandalf_note_delete", NoteDeleteInput{Ref: standard.Ref})
+	msg := h.callErr("note_delete", NoteDeleteInput{Ref: standard.Ref})
 	if !strings.Contains(msg, session.Ref) {
 		t.Errorf("error does not name the referrer %q: %q", session.Ref, msg)
 	}
@@ -33,7 +33,7 @@ func TestDeleteRefusesWhenReferenced(t *testing.T) {
 
 	// The note is still there.
 	var read NoteOutput
-	h.call("gandalf_note_read", NoteReadInput{Ref: standard.Ref}, &read)
+	h.call("note_read", NoteReadInput{Ref: standard.Ref}, &read)
 	if read.Title != "House Style" {
 		t.Error("the refused delete removed the note anyway")
 	}
@@ -44,22 +44,22 @@ func TestDeleteListsEveryReferrer(t *testing.T) {
 	h := newHarness(t)
 
 	var standard NoteOutput
-	h.call("gandalf_note_new", NoteNewInput{
+	h.call("note_new", NoteNewInput{
 		Kind: "standard", Title: "House Style", Tags: []string{"standards"},
 	}, &standard)
 
 	var refs []string
 	for _, title := range []string{"First Work", "Second Work"} {
 		var session SessionStartOutput
-		h.call("gandalf_session_start", SessionStartInput{Title: title, Tags: []string{"work"}}, &session)
-		h.call("gandalf_note_append", NoteAppendInput{
+		h.call("session_start", SessionStartInput{Title: title, Tags: []string{"work"}}, &session)
+		h.call("note_append", NoteAppendInput{
 			Ref:     session.Ref,
 			Content: "See [[standard:house-style]].",
 		}, nil)
 		refs = append(refs, session.Ref)
 	}
 
-	msg := h.callErr("gandalf_note_delete", NoteDeleteInput{Ref: standard.Ref})
+	msg := h.callErr("note_delete", NoteDeleteInput{Ref: standard.Ref})
 	for _, ref := range refs {
 		if !strings.Contains(msg, ref) {
 			t.Errorf("error omits referrer %q: %q", ref, msg)
@@ -71,12 +71,12 @@ func TestDeleteUnreferencedNote(t *testing.T) {
 	h := newHarness(t)
 
 	var standard NoteOutput
-	h.call("gandalf_note_new", NoteNewInput{
+	h.call("note_new", NoteNewInput{
 		Kind: "standard", Title: "Throwaway", Tags: []string{"standards"},
 	}, &standard)
 
 	var out NoteDeleteOutput
-	h.call("gandalf_note_delete", NoteDeleteInput{Ref: standard.Ref}, &out)
+	h.call("note_delete", NoteDeleteInput{Ref: standard.Ref}, &out)
 
 	if !out.Deleted {
 		t.Error("deleted = false")
@@ -84,7 +84,7 @@ func TestDeleteUnreferencedNote(t *testing.T) {
 	if h.vault.Exists("Standards/throwaway.md") {
 		t.Error("the file is still on disk")
 	}
-	if msg := h.callErr("gandalf_note_read", NoteReadInput{Ref: standard.Ref}); msg == "" {
+	if msg := h.callErr("note_read", NoteReadInput{Ref: standard.Ref}); msg == "" {
 		t.Error("the deleted note is still readable")
 	}
 }
@@ -95,14 +95,14 @@ func TestDeletingALinkerTrimsBacklinks(t *testing.T) {
 	h := newHarness(t)
 
 	var session SessionStartOutput
-	h.call("gandalf_session_start", SessionStartInput{Title: "Work", Tags: []string{"work"}}, &session)
-	h.call("gandalf_note_append", NoteAppendInput{
+	h.call("session_start", SessionStartInput{Title: "Work", Tags: []string{"work"}}, &session)
+	h.call("note_append", NoteAppendInput{
 		Ref:     session.Ref,
 		Content: "Applied [[standard:language-go]].",
 	}, nil)
 
 	var out NoteDeleteOutput
-	h.call("gandalf_note_delete", NoteDeleteInput{Ref: session.Ref}, &out)
+	h.call("note_delete", NoteDeleteInput{Ref: session.Ref}, &out)
 
 	if len(out.Rebuilt) == 0 {
 		t.Error("no notes reported as having their backlinks updated")
@@ -143,7 +143,7 @@ func TestDeleteRejects(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if msg := h.callErr("gandalf_note_delete", NoteDeleteInput{Ref: tc.ref}); !strings.Contains(msg, tc.want) {
+			if msg := h.callErr("note_delete", NoteDeleteInput{Ref: tc.ref}); !strings.Contains(msg, tc.want) {
 				t.Errorf("error = %q, want it to mention %q", msg, tc.want)
 			}
 		})
@@ -156,15 +156,15 @@ func TestVaultStaysCleanAfterDeletion(t *testing.T) {
 	h := newHarness(t)
 
 	var session SessionStartOutput
-	h.call("gandalf_session_start", SessionStartInput{Title: "Work", Tags: []string{"work"}}, &session)
-	h.call("gandalf_note_append", NoteAppendInput{
+	h.call("session_start", SessionStartInput{Title: "Work", Tags: []string{"work"}}, &session)
+	h.call("note_append", NoteAppendInput{
 		Ref:     session.Ref,
 		Content: "Applied [[standard:language-go]].",
 	}, nil)
-	h.call("gandalf_note_delete", NoteDeleteInput{Ref: session.Ref}, nil)
+	h.call("note_delete", NoteDeleteInput{Ref: session.Ref}, nil)
 
 	var out LintOutput
-	h.call("gandalf_lint", LintInput{}, &out)
+	h.call("lint", LintInput{}, &out)
 	if !out.Clean {
 		t.Errorf("deletion left findings: %+v", out.Findings)
 	}

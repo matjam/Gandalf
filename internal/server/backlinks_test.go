@@ -15,8 +15,8 @@ func TestBacklinksAppearInTheLinkedNote(t *testing.T) {
 	h := newHarness(t)
 
 	var session SessionStartOutput
-	h.call("gandalf_session_start", SessionStartInput{Title: "Linking Work", Tags: []string{"work"}}, &session)
-	h.call("gandalf_note_append", NoteAppendInput{
+	h.call("session_start", SessionStartInput{Title: "Linking Work", Tags: []string{"work"}}, &session)
+	h.call("note_append", NoteAppendInput{
 		Ref:     session.Ref,
 		Content: "Applied [[standard:language-go]] throughout.",
 	}, nil)
@@ -42,8 +42,8 @@ func TestBacklinksDoNotRecurse(t *testing.T) {
 	h := newHarness(t)
 
 	var session SessionStartOutput
-	h.call("gandalf_session_start", SessionStartInput{Title: "Work", Tags: []string{"work"}}, &session)
-	h.call("gandalf_note_append", NoteAppendInput{
+	h.call("session_start", SessionStartInput{Title: "Work", Tags: []string{"work"}}, &session)
+	h.call("note_append", NoteAppendInput{
 		Ref:     session.Ref,
 		Content: "Applied [[standard:language-go]].",
 	}, nil)
@@ -82,8 +82,8 @@ func TestBacklinksDoNotDisturbSeedFingerprints(t *testing.T) {
 	}
 
 	var session SessionStartOutput
-	h.call("gandalf_session_start", SessionStartInput{Title: "Work", Tags: []string{"work"}}, &session)
-	h.call("gandalf_note_append", NoteAppendInput{
+	h.call("session_start", SessionStartInput{Title: "Work", Tags: []string{"work"}}, &session)
+	h.call("note_append", NoteAppendInput{
 		Ref:     session.Ref,
 		Content: "Applied [[standard:language-go]] and [[topic:shipping]].",
 	}, nil)
@@ -105,15 +105,15 @@ func TestAppendGoesAboveTheBacklinks(t *testing.T) {
 	h := newHarness(t)
 
 	var session SessionStartOutput
-	h.call("gandalf_session_start", SessionStartInput{Title: "Work", Tags: []string{"work"}}, &session)
-	h.call("gandalf_note_append", NoteAppendInput{
+	h.call("session_start", SessionStartInput{Title: "Work", Tags: []string{"work"}}, &session)
+	h.call("note_append", NoteAppendInput{
 		Ref:     session.Ref,
 		Content: "Applied [[standard:language-go]].",
 	}, nil)
 
 	// The standard has a backlinks block; append to it and check where the
 	// content lands.
-	h.call("gandalf_note_append", NoteAppendInput{
+	h.call("note_append", NoteAppendInput{
 		Ref:     "standard:language-go",
 		Heading: "House Rule",
 		Content: "Prefer errors.Is over string matching.",
@@ -146,7 +146,7 @@ func TestAppendGoesAboveTheBacklinks(t *testing.T) {
 func TestBacklinksFollowFrontmatterRelations(t *testing.T) {
 	h := newHarness(t)
 
-	h.call("gandalf_session_start", SessionStartInput{
+	h.call("session_start", SessionStartInput{
 		Title: "Related Work", Tags: []string{"work"},
 		Related: []string{"standard:privacy"},
 	}, nil)
@@ -161,8 +161,8 @@ func TestBacklinksAreRemovedWhenLinksGo(t *testing.T) {
 	h := newHarness(t)
 
 	var session SessionStartOutput
-	h.call("gandalf_session_start", SessionStartInput{Title: "Work", Tags: []string{"work"}}, &session)
-	h.call("gandalf_note_append", NoteAppendInput{
+	h.call("session_start", SessionStartInput{Title: "Work", Tags: []string{"work"}}, &session)
+	h.call("note_append", NoteAppendInput{
 		Ref:     session.Ref,
 		Content: "Applied [[standard:language-go]].",
 	}, nil)
@@ -172,7 +172,7 @@ func TestBacklinksAreRemovedWhenLinksGo(t *testing.T) {
 	}
 
 	// Delete the linking note; the backlink must go with it.
-	h.call("gandalf_note_delete", NoteDeleteInput{Ref: session.Ref}, nil)
+	h.call("note_delete", NoteDeleteInput{Ref: session.Ref}, nil)
 
 	if raw := diskOf(t, h, "standard:language-go"); strings.Contains(raw, vault.BacklinksHeading) {
 		t.Errorf("the backlink outlived the note that made it:\n%s", raw)
@@ -183,17 +183,17 @@ func TestSeededVaultStaysCleanWithBacklinks(t *testing.T) {
 	h := newHarness(t)
 
 	var session SessionStartOutput
-	h.call("gandalf_session_start", SessionStartInput{
+	h.call("session_start", SessionStartInput{
 		Title: "Linked Work", Tags: []string{"work"},
 		Related: []string{"topic:operating"},
 	}, &session)
-	h.call("gandalf_note_append", NoteAppendInput{
+	h.call("note_append", NoteAppendInput{
 		Ref:     session.Ref,
 		Content: "Following [[standard:code-quality]] and [[standard:language-go]].",
 	}, nil)
 
 	var out LintOutput
-	h.call("gandalf_lint", LintInput{}, &out)
+	h.call("lint", LintInput{}, &out)
 	if !out.Clean {
 		t.Errorf("backlinks left the vault unclean: %+v", out.Findings)
 	}

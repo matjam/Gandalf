@@ -127,8 +127,8 @@ func (s *Server) indexStatus() IndexStatus {
 	if s.embedder == nil {
 		return IndexStatus{
 			State: IndexUnavailable,
-			Note: "No embedding model is configured, so gandalf_search will not work. " +
-				"Find notes with gandalf_list instead.",
+			Note: "No embedding model is configured, so search will not work. " +
+				"Find notes with list instead.",
 		}
 	}
 
@@ -150,13 +150,13 @@ func (s *Server) indexStatus() IndexStatus {
 	switch out.State {
 	case IndexBuilding:
 		out.Note = fmt.Sprintf(
-			"The search index is still being built (%d of %d notes). gandalf_search works "+
+			"The search index is still being built (%d of %d notes). search works "+
 				"now but only sees what has been indexed so far; a note it misses may exist. "+
-				"Use gandalf_list when you need certainty before it finishes.",
+				"Use list when you need certainty before it finishes.",
 			out.Done, out.Total)
 	case IndexFailed:
-		out.Note = "The search index failed to build, so gandalf_search results are incomplete " +
-			"or empty. Find notes with gandalf_list instead."
+		out.Note = "The search index failed to build, so search results are incomplete " +
+			"or empty. Find notes with list instead."
 	}
 
 	return out

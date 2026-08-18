@@ -88,6 +88,18 @@ func prepare(root string, seed, useGit bool) (*vault.Vault, *git.Repo, error) {
 		if n := instructions.Created(results); n > 0 {
 			fmt.Fprintf(os.Stderr, "gandalf: seeded %d document(s) into %s\n", n, v.Root())
 		}
+
+		// A vault seeded by an older release names tools this build no longer
+		// offers. Nothing else will fix that for an edited document, and a
+		// contract naming tools that do not exist is worse than useless: it
+		// tells the model to do something it cannot do.
+		renamed, err := instructions.RenameTools(v, schema.Today())
+		if err != nil {
+			return nil, nil, err
+		}
+		if len(renamed) > 0 {
+			fmt.Fprintf(os.Stderr, "gandalf: updated tool names in %d edited document(s)\n", len(renamed))
+		}
 	}
 
 	if !useGit {

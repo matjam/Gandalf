@@ -144,9 +144,9 @@ func TestToolsAreRegistered(t *testing.T) {
 	}
 
 	for _, want := range []string{
-		"gandalf_boot", "gandalf_note_read", "gandalf_session_start",
-		"gandalf_note_new", "gandalf_note_append", "gandalf_note_update",
-		"gandalf_lint", "gandalf_correct",
+		"boot", "note_read", "session_start",
+		"note_new", "note_append", "note_update",
+		"lint", "correct",
 	} {
 		if !got[want] {
 			t.Errorf("%s is not registered", want)
@@ -158,7 +158,7 @@ func TestBoot(t *testing.T) {
 	h := newHarness(t)
 
 	var out BootOutput
-	h.call("gandalf_boot", BootInput{}, &out)
+	h.call("boot", BootInput{}, &out)
 
 	if out.Vault != h.vault.Root() {
 		t.Errorf("vault = %q, want %q", out.Vault, h.vault.Root())
@@ -193,7 +193,7 @@ func TestBoot(t *testing.T) {
 	// Every advertised topic must be fetchable by the ref boot handed out.
 	for _, topic := range out.Topics {
 		var got NoteOutput
-		h.call("gandalf_note_read", NoteReadInput{Ref: topic.Ref}, &got)
+		h.call("note_read", NoteReadInput{Ref: topic.Ref}, &got)
 		if got.Content == "" {
 			t.Errorf("%s returned no content", topic.Ref)
 		}
@@ -216,7 +216,7 @@ func TestBootPrefersTheVaultOverTheBinary(t *testing.T) {
 	}
 
 	var out BootOutput
-	h.call("gandalf_boot", BootInput{}, &out)
+	h.call("boot", BootInput{}, &out)
 
 	for _, doc := range out.Contract {
 		if doc.ID == "operating" {
@@ -261,9 +261,9 @@ func TestOneReadVerb(t *testing.T) {
 	h := newHarness(t)
 
 	var byRef, bare, byStandard NoteOutput
-	h.call("gandalf_note_read", NoteReadInput{Ref: "topic:shipping"}, &byRef)
-	h.call("gandalf_note_read", NoteReadInput{Ref: "shipping"}, &bare)
-	h.call("gandalf_note_read", NoteReadInput{Ref: "standard:privacy"}, &byStandard)
+	h.call("note_read", NoteReadInput{Ref: "topic:shipping"}, &byRef)
+	h.call("note_read", NoteReadInput{Ref: "shipping"}, &bare)
+	h.call("note_read", NoteReadInput{Ref: "standard:privacy"}, &byStandard)
 
 	if byRef.Content != bare.Content {
 		t.Error("a bare id returned different content from its ref")
@@ -275,7 +275,7 @@ func TestOneReadVerb(t *testing.T) {
 		t.Errorf("refs = %q and %q", byRef.Ref, byStandard.Ref)
 	}
 
-	if msg := h.callErr("gandalf_note_read", NoteReadInput{Ref: "topic:nonexistent"}); !strings.Contains(msg, "no such topic") {
+	if msg := h.callErr("note_read", NoteReadInput{Ref: "topic:nonexistent"}); !strings.Contains(msg, "no such topic") {
 		t.Errorf("error = %q, want it to name the missing topic", msg)
 	}
 }
@@ -298,5 +298,34 @@ func TestShippedDocumentsSurviveAnUnseededVault(t *testing.T) {
 	}
 	if !strings.Contains(out.Content, "Operating Contract") {
 		t.Errorf("content = %q", out.Content)
+	}
+}
+
+// TestToolNamesAreUnprefixed keeps the surface free of the stutter that made
+// gandalf_note_read read as gandalf/gandalf_note_read in a client that already
+// namespaces by server.
+func TestToolNamesAreUnprefixed(t *testing.T) {
+	h := newHarness(t)
+
+	tools, err := h.client.ListTools(h.context, nil)
+	if err != nil {
+		t.Fatalf("ListTools: %v", err)
+	}
+	if len(tools.Tools) == 0 {
+		t.Fatal("no tools registered")
+	}
+
+	for _, tool := range tools.Tools {
+		if strings.HasPrefix(tool.Name, "gandalf_") {
+			t.Errorf("tool %q still carries the server's own name", tool.Name)
+		}
+		if tool.Description == "" {
+			t.Errorf("tool %q has no description", tool.Name)
+		}
+		// A description naming a retired tool sends the model at something
+		// that is no longer there.
+		if strings.Contains(tool.Description, "gandalf_") {
+			t.Errorf("tool %q describes itself with a retired tool name", tool.Name)
+		}
 	}
 }

@@ -10,7 +10,7 @@ func design(h *harness, content string) string {
 	h.t.Helper()
 
 	var out NoteOutput
-	h.call("gandalf_note_new", NoteNewInput{
+	h.call("note_new", NoteNewInput{
 		Kind:    "project",
 		Scope:   "gandalf",
 		Facet:   "design",
@@ -39,7 +39,7 @@ func TestNoteReplaceSection(t *testing.T) {
 	ref := design(h, designBody)
 
 	var out NoteReplaceOutput
-	h.call("gandalf_note_replace", NoteReplaceInput{
+	h.call("note_replace", NoteReplaceInput{
 		Ref:     ref,
 		Section: "Verification",
 		Content: "New verification.",
@@ -63,7 +63,7 @@ func TestNoteReplaceAnchored(t *testing.T) {
 	ref := design(h, designBody)
 
 	var out NoteReplaceOutput
-	h.call("gandalf_note_replace", NoteReplaceInput{
+	h.call("note_replace", NoteReplaceInput{
 		Ref:     ref,
 		From:    "## Shape",
 		To:      "## Verification",
@@ -83,7 +83,7 @@ func TestNoteReplaceWholeBody(t *testing.T) {
 	ref := design(h, designBody)
 
 	var out NoteReplaceOutput
-	h.call("gandalf_note_replace", NoteReplaceInput{Ref: ref, Content: "# Gandalf\n\nStarted over."}, &out)
+	h.call("note_replace", NoteReplaceInput{Ref: ref, Content: "# Gandalf\n\nStarted over."}, &out)
 
 	if !strings.Contains(out.Removed, "Old shape.") {
 		t.Errorf("removed = %q", out.Removed)
@@ -99,19 +99,19 @@ func TestNoteReplaceRefusesAppendOnly(t *testing.T) {
 	h := newHarness(t)
 
 	var session SessionStartOutput
-	h.call("gandalf_session_start", SessionStartInput{Title: "Some Work", Tags: []string{"work"}}, &session)
-	h.call("gandalf_note_append", NoteAppendInput{Ref: session.Ref, Content: "What I knew at the time."}, nil)
+	h.call("session_start", SessionStartInput{Title: "Some Work", Tags: []string{"work"}}, &session)
+	h.call("note_append", NoteAppendInput{Ref: session.Ref, Content: "What I knew at the time."}, nil)
 
-	msg := h.callErr("gandalf_note_replace", NoteReplaceInput{
+	msg := h.callErr("note_replace", NoteReplaceInput{
 		Ref:     session.Ref,
 		Content: "# Tidier\n\nA better account.",
 	})
-	if !strings.Contains(msg, "append-only") || !strings.Contains(msg, "gandalf_note_append") {
+	if !strings.Contains(msg, "append-only") || !strings.Contains(msg, "note_append") {
 		t.Errorf("error does not explain the rule or the alternative: %s", msg)
 	}
 
 	var note NoteOutput
-	h.call("gandalf_note_read", NoteReadInput{Ref: session.Ref}, &note)
+	h.call("note_read", NoteReadInput{Ref: session.Ref}, &note)
 	if !strings.Contains(note.Content, "What I knew at the time.") {
 		t.Error("the session note was modified anyway")
 	}
@@ -124,12 +124,12 @@ func TestNoteReplaceRefusesDecisions(t *testing.T) {
 	h := newHarness(t)
 
 	var out NoteOutput
-	h.call("gandalf_note_new", NoteNewInput{
+	h.call("note_new", NoteNewInput{
 		Kind: "project", Scope: "gandalf", Facet: "decisions",
 		Title: "Gandalf — Decisions", Content: "## 2026-08-18 — Something\n\nDecided.",
 	}, &out)
 
-	if msg := h.callErr("gandalf_note_replace", NoteReplaceInput{
+	if msg := h.callErr("note_replace", NoteReplaceInput{
 		Ref: out.Ref, Section: "2026-08-18 — Something", Content: "Undecided.",
 	}); !strings.Contains(msg, "append-only") {
 		t.Errorf("decisions log was not protected: %s", msg)
@@ -141,21 +141,21 @@ func TestNoteReplaceRefusesDecisions(t *testing.T) {
 func TestNoteReplaceRequiresRead(t *testing.T) {
 	h := newHarness(t)
 
-	msg := h.callErr("gandalf_note_replace", NoteReplaceInput{
+	msg := h.callErr("note_replace", NoteReplaceInput{
 		Ref:     "standard:language-go",
 		Section: "Tooling",
 		Content: "Run gofmt.",
 	})
-	if !strings.Contains(msg, "gandalf_note_read") {
+	if !strings.Contains(msg, "note_read") {
 		t.Fatalf("error does not say to read the note first: %s", msg)
 	}
 
 	// Reading it is enough to unblock the same call.
 	var note NoteOutput
-	h.call("gandalf_note_read", NoteReadInput{Ref: "standard:language-go"}, &note)
+	h.call("note_read", NoteReadInput{Ref: "standard:language-go"}, &note)
 
 	var out NoteReplaceOutput
-	h.call("gandalf_note_replace", NoteReplaceInput{
+	h.call("note_replace", NoteReplaceInput{
 		Ref:     "standard:language-go",
 		Section: "Tooling",
 		Content: "Run gofmt.",
@@ -191,7 +191,7 @@ func TestNoteReplaceBadRequests(t *testing.T) {
 		{
 			name: "emptying the whole note",
 			in:   NoteReplaceInput{Ref: ref, Content: "   "},
-			want: "gandalf_note_delete",
+			want: "note_delete",
 		},
 		{
 			name: "no such section",
@@ -207,7 +207,7 @@ func TestNoteReplaceBadRequests(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if msg := h.callErr("gandalf_note_replace", tt.in); !strings.Contains(msg, tt.want) {
+			if msg := h.callErr("note_replace", tt.in); !strings.Contains(msg, tt.want) {
 				t.Errorf("error = %q, want it to mention %q", msg, tt.want)
 			}
 		})
@@ -215,7 +215,7 @@ func TestNoteReplaceBadRequests(t *testing.T) {
 
 	// None of that touched the note.
 	var note NoteOutput
-	h.call("gandalf_note_read", NoteReadInput{Ref: ref}, &note)
+	h.call("note_read", NoteReadInput{Ref: ref}, &note)
 	if !strings.Contains(note.Content, "Old shape.") {
 		t.Error("a refused replacement modified the note")
 	}
@@ -227,7 +227,7 @@ func TestNoteReplaceMaintainsBacklinks(t *testing.T) {
 	h := newHarness(t)
 
 	var decisions NoteOutput
-	h.call("gandalf_note_new", NoteNewInput{
+	h.call("note_new", NoteNewInput{
 		Kind: "project", Scope: "gandalf", Facet: "decisions",
 		Title: "Gandalf — Decisions", Content: "## A decision\n\nMade.",
 	}, &decisions)
@@ -235,16 +235,16 @@ func TestNoteReplaceMaintainsBacklinks(t *testing.T) {
 	ref := design(h, "## Shape\n\nSee [[project:gandalf:decisions]].\n\n## Verification\n\nTested.")
 
 	var linked NoteOutput
-	h.call("gandalf_note_read", NoteReadInput{Ref: decisions.Ref}, &linked)
+	h.call("note_read", NoteReadInput{Ref: decisions.Ref}, &linked)
 	if !strings.Contains(linked.Content, "project:gandalf:design") {
 		t.Fatalf("the link was never recorded:\n%s", linked.Content)
 	}
 
-	h.call("gandalf_note_replace", NoteReplaceInput{
+	h.call("note_replace", NoteReplaceInput{
 		Ref: ref, Section: "Shape", Content: "No links here.",
 	}, nil)
 
-	h.call("gandalf_note_read", NoteReadInput{Ref: decisions.Ref}, &linked)
+	h.call("note_read", NoteReadInput{Ref: decisions.Ref}, &linked)
 	if strings.Contains(linked.Content, "project:gandalf:design") {
 		t.Errorf("the backlink survived the link being removed:\n%s", linked.Content)
 	}
@@ -256,7 +256,7 @@ func TestNoteReplaceRefusesDeadLinks(t *testing.T) {
 	h := newHarness(t)
 	ref := design(h, designBody)
 
-	if msg := h.callErr("gandalf_note_replace", NoteReplaceInput{
+	if msg := h.callErr("note_replace", NoteReplaceInput{
 		Ref: ref, Section: "Verification", Content: "See [[project:nonexistent:design]].",
 	}); !strings.Contains(msg, "do not exist") {
 		t.Errorf("error = %q", msg)
@@ -274,12 +274,12 @@ func TestReplaceForcesAnAppendOnlyNote(t *testing.T) {
 	h := newHarness(t)
 
 	var session SessionStartOutput
-	h.call("gandalf_session_start", SessionStartInput{Title: "Untitled Work"}, &session)
-	h.call("gandalf_note_append", NoteAppendInput{Ref: session.Ref, Content: "What happened."}, nil)
+	h.call("session_start", SessionStartInput{Title: "Untitled Work"}, &session)
+	h.call("note_append", NoteAppendInput{Ref: session.Ref, Content: "What happened."}, nil)
 
 	// Without force it stays refused, and the refusal has to say how to
 	// proceed rather than merely saying no.
-	msg := h.callErr("gandalf_note_replace", NoteReplaceInput{
+	msg := h.callErr("note_replace", NoteReplaceInput{
 		Ref:     session.Ref,
 		Content: "# Repaired\n\nWhat happened.",
 	})
@@ -288,7 +288,7 @@ func TestReplaceForcesAnAppendOnlyNote(t *testing.T) {
 	}
 
 	var out NoteReplaceOutput
-	h.call("gandalf_note_replace", NoteReplaceInput{
+	h.call("note_replace", NoteReplaceInput{
 		Ref:     session.Ref,
 		Content: "# Repaired\n\nWhat happened.",
 		Force:   true,
@@ -299,7 +299,7 @@ func TestReplaceForcesAnAppendOnlyNote(t *testing.T) {
 	}
 
 	var after NoteOutput
-	h.call("gandalf_note_read", NoteReadInput{Ref: session.Ref}, &after)
+	h.call("note_read", NoteReadInput{Ref: session.Ref}, &after)
 	if !strings.Contains(after.Content, "# Repaired") {
 		t.Error("the repair did not land")
 	}
@@ -311,10 +311,10 @@ func TestReplaceForceIsNotNeededForAReplaceableNote(t *testing.T) {
 	h := newHarness(t)
 
 	var note NoteOutput
-	h.call("gandalf_note_read", NoteReadInput{Ref: "standard:language-go"}, &note)
+	h.call("note_read", NoteReadInput{Ref: "standard:language-go"}, &note)
 
 	var out NoteReplaceOutput
-	h.call("gandalf_note_replace", NoteReplaceInput{
+	h.call("note_replace", NoteReplaceInput{
 		Ref:     "standard:language-go",
 		Section: "Tooling",
 		Content: "- Run the race detector in CI.",

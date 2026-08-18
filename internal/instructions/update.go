@@ -25,7 +25,7 @@ type UpdateResult struct {
 // Modified and diverged documents are left alone and reported, since merging
 // an edit is the user's call.
 //
-// Without this the gap is permanent, and it is not cosmetic: gandalf_boot
+// Without this the gap is permanent, and it is not cosmetic: boot
 // serves the vault's copy, so an agent goes on reading instructions that
 // describe a tool surface the binary no longer has.
 //

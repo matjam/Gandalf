@@ -2,7 +2,7 @@
 
 One note per logical unit of work, filed by the date it was created and addressed as
 `session:<date>-<slug>`. Where the files land is set by the session category in
-`.gandalf/categories.json`; `gandalf_category_list` reports the current arrangement.
+`.gandalf/categories.json`; `category_list` reports the current arrangement.
 
 A session note records what the work was trying to do, what was decided and why, what
 was rejected and why, and the context that would be hard to reconstruct from the

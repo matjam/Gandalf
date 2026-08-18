@@ -15,7 +15,7 @@ import (
 //
 // Section and anchor addressing are alternatives, and giving neither replaces
 // the whole body. Frontmatter is not reachable from here at all: it is
-// Gandalf's, and gandalf_note_update is how metadata changes.
+// Gandalf's, and note_update is how metadata changes.
 type NoteReplaceInput struct {
 	Ref     string `json:"ref"`
 	Content string `json:"content" jsonschema:"the replacement text; empty removes the span"`
@@ -81,7 +81,7 @@ func (s *Server) noteReplace(ctx context.Context, _ *sdk.CallToolRequest, in Not
 		if !in.Force {
 			return nil, NoteReplaceOutput{}, fmt.Errorf(
 				"%s is %s: it records what was known at the time rather than describing the current "+
-					"state. Add to it with gandalf_note_append, or pass force to rewrite it anyway "+
+					"state. Add to it with note_append, or pass force to rewrite it anyway "+
 					"when you are repairing a defect rather than revising the record", ref, m)
 		}
 		forced = true
@@ -92,7 +92,7 @@ func (s *Server) noteReplace(ctx context.Context, _ *sdk.CallToolRequest, in Not
 	// whether a bounded edit removed the right thing.
 	if !s.hasRead(ref) {
 		return nil, NoteReplaceOutput{}, fmt.Errorf(
-			"read %s with gandalf_note_read before replacing part of it", ref)
+			"read %s with note_read before replacing part of it", ref)
 	}
 
 	resolved := s.resolveLinks(nil, in.Content)
@@ -164,7 +164,7 @@ func replaceTarget(in NoteReplaceInput) (target, error) {
 	case strings.TrimSpace(in.Content) == "":
 		return 0, fmt.Errorf(
 			"replacing the whole body with nothing would leave an empty note; name a section, " +
-				"give anchors, or remove the note with gandalf_note_delete")
+				"give anchors, or remove the note with note_delete")
 
 	default:
 		return targetWhole, nil

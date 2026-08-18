@@ -87,7 +87,7 @@ func (v *Vault) ParseRef(s string) (Ref, error) {
 		if looksLikePath(trimmed) {
 			return Ref{}, fmt.Errorf(
 				"%q is a file path; notes are addressed by ref, such as %s. "+
-					"Refs come from gandalf_boot, gandalf_list, or the tool that created the note",
+					"Refs come from boot, list, or the tool that created the note",
 				s, v.refExamples())
 		}
 		return Ref{}, fmt.Errorf("ref %q: unknown category %q (want one of %s)",

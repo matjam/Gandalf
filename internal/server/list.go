@@ -59,7 +59,7 @@ type ListOutput struct {
 // information rather than hiding it.
 const defaultLimit = 20
 
-// listNames returns everything gandalf_list accepts for this vault: each
+// listNames returns everything list accepts for this vault: each
 // category's plural, plus the two listings that are not categories.
 func (s *Server) listNames() []string {
 	out := []string{"all", "topics"}

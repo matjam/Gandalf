@@ -9,7 +9,7 @@ supply prose.
 Notes are addressed by ref: what a note is, not where it lives. Never a file path.
 
 A ref starts with a category — a kind of note this vault keeps. The categories are
-declared by the vault rather than fixed by Gandalf, so `gandalf_category_list` is the
+declared by the vault rather than fixed by Gandalf, so `category_list` is the
 authority on which exist and how each is addressed. With the shipped defaults:
 
 | Ref | Addresses |
@@ -22,7 +22,7 @@ authority on which exist and how each is addressed. With the shipped defaults:
 | `topic:shipping` | an operating topic |
 | `glossary` | the glossary |
 
-Refs come from the tools — `gandalf_boot`, `gandalf_list`, `gandalf_lint`, or whichever
+Refs come from the tools — `boot`, `list`, `lint`, or whichever
 tool created the note. Do not construct one from a filename you saw somewhere; where a
 note lives is Gandalf's problem, and it will move things if the vault's conventions
 change.
@@ -37,47 +37,47 @@ vault's structure — gets a `path:` ref. Those can be read but not written.
 
 Before substantive work:
 
-1. Call `gandalf_boot`. It returns this protocol, the operating contract, the topics
+1. Call `boot`. It returns this protocol, the operating contract, the topics
    available on demand, and any session note still open today.
 2. If a session note is already open and this is the same unit of work, continue it
    rather than starting another.
-3. Look for prior work on the same topic before re-deciding anything. `gandalf_search`
+3. Look for prior work on the same topic before re-deciding anything. `search`
    finds notes by meaning, so it turns up work described in words you did not think to
-   use; `gandalf_list` shows what exists by name when you already know what you are
+   use; `list` shows what exists by name when you already know what you are
    after. For a known project, read its design, decisions, and todo notes.
 4. Distil what you found into a few bullets, surface them to the user, and confirm
    anything stale or consequential before relying on it.
-5. Create the session note with `gandalf_session_start` before proposing or writing
+5. Create the session note with `session_start` before proposing or writing
    code. One note per logical unit of work — not one per conversation, not one per day.
 
 Read-only work creates no notes. Read freely, write nothing.
 
 ## Finding and Writing
 
-- `gandalf_search` finds notes by meaning rather than wording. Use it when you know the
-  subject but not how it was written down. `gandalf_boot` reports whether its index is
+- `search` finds notes by meaning rather than wording. Use it when you know the
+  subject but not how it was written down. `boot` reports whether its index is
   ready, still building, or unavailable, and every search result says the same. A search
   answered while the index is still building is a partial answer: it can miss a note
-  that exists, so confirm with `gandalf_list` before concluding the vault is silent on
+  that exists, so confirm with `list` before concluding the vault is silent on
   something.
-- `gandalf_list` enumerates the vault by category, returning refs and titles but no
+- `list` enumerates the vault by category, returning refs and titles but no
   content. Use it when you know what you want by name.
-- `gandalf_note_read` reads a note, or one of the operating topics, by ref. Search and
+- `note_read` reads a note, or one of the operating topics, by ref. Search and
   listings return refs; pass one straight back to read it in full.
-- `gandalf_session_start` opens the session note and returns its ref. Hold that ref; if
-  you lose it, `gandalf_boot` will hand it back.
-- `gandalf_note_new` creates a note of a given kind and returns its ref.
-- `gandalf_note_append` adds to a note's body without touching what is already there.
+- `session_start` opens the session note and returns its ref. Hold that ref; if
+  you lose it, `boot` will hand it back.
+- `note_new` creates a note of a given kind and returns its ref.
+- `note_append` adds to a note's body without touching what is already there.
   Prefer it whenever the new text sits alongside the old.
-- `gandalf_note_replace` rewrites part of a note that describes current state — a
+- `note_replace` rewrites part of a note that describes current state — a
   design note, a backlog, a standard. Name a `section` to rewrite one section, or give
   `from` and `to` anchors to rewrite the span between them; with neither, the whole body
   goes. It returns the text it removed: read that, and check it is what you meant to
   remove.
-- `gandalf_note_update` changes metadata only — tags, related links, status.
-- `gandalf_note_delete` removes a note, refusing while anything still links to it and
+- `note_update` changes metadata only — tags, related links, status.
+- `note_delete` removes a note, refusing while anything still links to it and
   listing what does.
-- `gandalf_lint` reports schema violations and links pointing nowhere.
+- `lint` reports schema violations and links pointing nowhere.
 
 Never write a frontmatter block by hand, never choose a filename, never open a vault
 file in an editor.
@@ -97,13 +97,13 @@ whenever links change.
 A category is a kind of note: what it is called, where its notes are filed, and how
 they are addressed. The vault declares its own.
 
-- `gandalf_category_list` shows what exists, with the ref form for each.
-- `gandalf_category_create` declares a new one. Ask before doing this; it changes how
+- `category_list` shows what exists, with the ref form for each.
+- `category_create` declares a new one. Ask before doing this; it changes how
   the vault is organised. Do not invent a category to avoid deciding where a note
   belongs.
-- `gandalf_category_retire` stops new notes being filed under one, leaving the existing
+- `category_retire` stops new notes being filed under one, leaving the existing
   notes readable and writable.
-- `gandalf_category_delete` removes one entirely, and only when it holds no notes.
+- `category_delete` removes one entirely, and only when it holds no notes.
 
 ## What May Be Rewritten
 
@@ -115,7 +115,7 @@ what the note is for, not how careful you are being.
 | **Append-only** | Sessions, decision logs, meetings. A chronological record of what was known at the time. Add to these; a tidier rewrite destroys the only thing they were for. |
 | **Replaceable** | Design notes, backlogs, standards, the glossary, operating topics. These describe the current state, so the failure is staleness rather than loss. |
 
-`gandalf_category_list` reports which is which, and `gandalf_note_replace` refuses an
+`category_list` reports which is which, and `note_replace` refuses an
 append-only note rather than letting you find out afterwards.
 
 That refusal is a default, not a seal. Pass `force` to rewrite an append-only note when
@@ -132,7 +132,7 @@ section rather than the whole body, a span rather than a section. Read the note 
 the tool requires it — and check the text it reports removing against what you meant to
 remove.
 
-Frontmatter is never yours to edit, in any category. `gandalf_note_update` changes
+Frontmatter is never yours to edit, in any category. `note_update` changes
 metadata; the `## Backlinks` block is maintained and is rewritten whenever links change.
 
 ## Session Notes
@@ -156,7 +156,7 @@ Each project has up to three notes, addressed as `project:<name>:design`,
 `project:<name>:decisions`, and `project:<name>:todo`.
 
 - **Design** describes the current state only. Rewrite the section that has gone stale
-  with `gandalf_note_replace` rather than appending a correction beneath it; keep the
+  with `note_replace` rather than appending a correction beneath it; keep the
   note short enough to stay read.
 - **Decisions** is append-only. Record significant decisions as they are made, with
   their context and the tradeoffs accepted. Supersede an old entry with a new one

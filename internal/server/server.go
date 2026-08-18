@@ -117,56 +117,56 @@ func (s *Server) MCP() *sdk.Server {
 	}, nil)
 
 	sdk.AddTool(srv, &sdk.Tool{
-		Name: "gandalf_boot",
+		Name: "boot",
 		Description: "Start here, before any other work. Returns the operating contract, " +
 			"the topics available on demand, and any session notes already open today. " +
 			"Read what it returns; it is the working agreement for this session.",
 	}, s.boot)
 
 	sdk.AddTool(srv, &sdk.Tool{
-		Name: "gandalf_search",
+		Name: "search",
 		Description: "Find notes by meaning, not just wording. Use this before starting work " +
 			"to see what the vault already says about a topic. Returns refs, so a hit can be " +
 			"read straight away.",
 	}, s.search)
 
 	sdk.AddTool(srv, &sdk.Tool{
-		Name: "gandalf_list",
+		Name: "list",
 		Description: "List what the vault holds, without content: sessions, projects, " +
 			"standards, topics, meetings, interviews, or all. Use it to find prior work " +
 			"before starting, and to discover which projects exist.",
 	}, s.list)
 
 	sdk.AddTool(srv, &sdk.Tool{
-		Name: "gandalf_note_read",
-		Description: "Read a note or an operating topic by ref. Refs come from gandalf_boot, " +
-			"gandalf_search, gandalf_list, or whichever tool created the note; they are never " +
+		Name: "note_read",
+		Description: "Read a note or an operating topic by ref. Refs come from boot, " +
+			"search, list, or whichever tool created the note; they are never " +
 			"constructed from a file path. Read the matching topic before proposing or " +
 			"changing work it covers.",
 	}, s.noteRead)
 
 	sdk.AddTool(srv, &sdk.Tool{
-		Name: "gandalf_session_start",
+		Name: "session_start",
 		Description: "Create this session's note, before proposing or writing code. " +
 			"One note per logical unit of work, not one per conversation. Returns the " +
 			"ref to append to as the work proceeds.",
 	}, s.sessionStart)
 
 	sdk.AddTool(srv, &sdk.Tool{
-		Name: "gandalf_note_new",
+		Name: "note_new",
 		Description: "Create a note. Gandalf decides where it is filed and writes its " +
 			"metadata; supply the content. Returns the ref.",
 	}, s.noteNew)
 
 	sdk.AddTool(srv, &sdk.Tool{
-		Name: "gandalf_note_append",
+		Name: "note_append",
 		Description: "Append content to a note, optionally under a new heading. Adding to " +
 			"a note can never lose what it already says, so prefer it whenever the new " +
 			"content sits alongside the old rather than replacing it.",
 	}, s.noteAppend)
 
 	sdk.AddTool(srv, &sdk.Tool{
-		Name: "gandalf_note_replace",
+		Name: "note_replace",
 		Description: "Rewrite part of a note that describes current state — a design note, " +
 			"a backlog, a standard. Name a section to rewrite just that section, or give " +
 			"from and to anchors to rewrite the span between them; with neither, the whole " +
@@ -177,56 +177,56 @@ func (s *Server) MCP() *sdk.Server {
 	}, s.noteReplace)
 
 	sdk.AddTool(srv, &sdk.Tool{
-		Name: "gandalf_note_update",
+		Name: "note_update",
 		Description: "Update a note's metadata — tags, related links, status. The updated " +
 			"date is maintained automatically; the body is not touched.",
 	}, s.noteUpdate)
 
 	sdk.AddTool(srv, &sdk.Tool{
-		Name: "gandalf_category_list",
+		Name: "category_list",
 		Description: "List the kinds of note this vault holds, how each is filed, and how " +
 			"its notes are addressed. Check here before creating a note of an unfamiliar kind.",
 	}, s.categoryList)
 
 	sdk.AddTool(srv, &sdk.Tool{
-		Name: "gandalf_category_create",
+		Name: "category_create",
 		Description: "Declare a new kind of note, when what the user is keeping does not fit " +
 			"the kinds that exist. A design decision, not a routine one: ask first.",
 	}, s.categoryCreate)
 
 	sdk.AddTool(srv, &sdk.Tool{
-		Name: "gandalf_category_retire",
+		Name: "category_retire",
 		Description: "Stop new notes being filed under a category, leaving the ones already " +
 			"there readable and writable.",
 	}, s.categoryRetire)
 
 	sdk.AddTool(srv, &sdk.Tool{
-		Name: "gandalf_category_delete",
+		Name: "category_delete",
 		Description: "Remove a category entirely. Only works when it holds no notes; retire " +
 			"it instead if it does.",
 	}, s.categoryDelete)
 
 	sdk.AddTool(srv, &sdk.Tool{
-		Name: "gandalf_note_delete",
+		Name: "note_delete",
 		Description: "Delete a note. Refused when other notes link to it, listing them so " +
 			"the links can be removed first.",
 	}, s.noteDelete)
 
 	sdk.AddTool(srv, &sdk.Tool{
-		Name: "gandalf_lint",
+		Name: "lint",
 		Description: "Validate note metadata and links, for one note or the whole vault. " +
 			"Reports are addressed by ref.",
 	}, s.lint)
 
 	sdk.AddTool(srv, &sdk.Tool{
-		Name: "gandalf_correct",
+		Name: "correct",
 		Description: "Record a correction from the user in the vault, in the one file that " +
 			"owns that kind of guidance. Call this in the same reply as applying the " +
 			"correction, so it survives the session.",
 	}, s.correct)
 
 	sdk.AddTool(srv, &sdk.Tool{
-		Name: "gandalf_git_remote",
+		Name: "git_remote",
 		Description: "Configure the vault's git remote URL so Gandalf can push and pull. " +
 			"Gandalf commits every change automatically; use this when the user wants the " +
 			"vault mirrored to a remote, or pass an empty url to stop syncing. Conflicts " +
@@ -240,7 +240,7 @@ func (s *Server) MCP() *sdk.Server {
 func (s *Server) Run(ctx context.Context) error {
 	// Start indexing as the server comes up rather than on the first search.
 	// The cost is the same either way; paying it in the background means the
-	// session is not blocked on it, and gandalf_boot can say how far it got.
+	// session is not blocked on it, and boot can say how far it got.
 	s.startIndexing(ctx)
 
 	if err := s.MCP().Run(ctx, &sdk.StdioTransport{}); err != nil {
