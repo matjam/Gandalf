@@ -1,4 +1,5 @@
 /bin/
+/.build/
 *.db
 *.db-wal
 *.db-shm

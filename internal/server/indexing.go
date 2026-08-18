@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/matjam/gandalf/internal/embed"
 	"github.com/matjam/gandalf/internal/index"
 )
 
@@ -38,6 +39,12 @@ type IndexStatus struct {
 	// chunk counts because a note is the unit a caller recognises.
 	Done  int `json:"notes_done,omitempty"`
 	Total int `json:"notes_total,omitempty"`
+
+	// Backend names the compute path search is running on, once the model has
+	// loaded. The difference between the native runtime and the pure-Go
+	// fallback is more than an order of magnitude, so it belongs where someone
+	// wondering why indexing is slow will see it.
+	Backend string `json:"backend,omitempty"`
 
 	Error string `json:"error,omitempty"`
 
@@ -136,9 +143,10 @@ func (s *Server) indexStatus() IndexStatus {
 	defer s.indexer.mu.Unlock()
 
 	out := IndexStatus{
-		State: s.indexer.state,
-		Done:  s.indexer.done,
-		Total: s.indexer.total,
+		State:   s.indexer.state,
+		Done:    s.indexer.done,
+		Total:   s.indexer.total,
+		Backend: s.backendName(),
 	}
 	if out.State == "" {
 		out.State = IndexBuilding
@@ -189,4 +197,16 @@ func (s *Server) awaitIndex(ctx context.Context) {
 	case <-timer.C:
 	case <-ctx.Done():
 	}
+}
+
+// backendName reports the embedder's compute path when it exposes one. Not
+// every embedder has the notion — a remote endpoint's engine is its own
+// business — so this is asked for rather than required.
+func (s *Server) backendName() string {
+	type backended interface{ Backend() embed.Backend }
+
+	if b, ok := s.embedder.(backended); ok {
+		return string(b.Backend())
+	}
+	return ""
 }

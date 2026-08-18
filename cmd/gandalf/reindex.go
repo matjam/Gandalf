@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/matjam/gandalf/internal/embed"
 	"github.com/matjam/gandalf/internal/index"
 	"github.com/matjam/gandalf/internal/server"
 	"github.com/matjam/gandalf/internal/vault"
@@ -94,8 +95,9 @@ func reindex(args []string) error {
 
 	total := time.Since(started)
 
-	fmt.Printf("\n%s: %d indexed, %d unchanged, %d removed, %d chunks total (%s)\n",
-		v.Root(), report.Indexed, report.Unchanged, report.Removed, report.Chunks, embedder.Model())
+	fmt.Printf("\n%s: %d indexed, %d unchanged, %d removed, %d chunks total (%s%s)\n",
+		v.Root(), report.Indexed, report.Unchanged, report.Removed, report.Chunks,
+		embedder.Model(), backendSuffix(embedder))
 	fmt.Printf("took %s", round(total))
 	if report.Indexed > 0 {
 		fmt.Printf(", %s embedding (%s per indexed note)",
@@ -128,4 +130,19 @@ func round(d time.Duration) time.Duration {
 	default:
 		return d.Round(time.Millisecond)
 	}
+}
+
+// backendSuffix names the compute path an in-process embedder chose, when it
+// has one. The choice is made at load time and depends on how the binary was
+// built and what is installed, so a run that took twenty minutes should say
+// which engine did the work rather than leaving it to be guessed.
+func backendSuffix(e embed.Embedder) string {
+	type backended interface{ Backend() embed.Backend }
+
+	if b, ok := e.(backended); ok {
+		if name := b.Backend(); name != "" {
+			return ", " + string(name)
+		}
+	}
+	return ""
 }

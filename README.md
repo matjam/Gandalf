@@ -5,7 +5,7 @@ an Obsidian-compatible markdown vault where the *tool* owns note metadata, so th
 model spends its attention on the work instead of on frontmatter bookkeeping.
 
 It ships an operating instruction set — GandalfOS — that is seeded into the vault
-on first use and served back to the model through `gandalf_boot` at the start of a
+on first use and served back to the model through `boot` at the start of a
 session.
 
 **Status: working, early.** Everything below runs. It has not yet been used in anger
@@ -41,9 +41,15 @@ Requires Go 1.26 or newer.
 ```
 git clone https://github.com/matjam/gandalf
 cd gandalf
-make build            # -> bin/gandalf
+brew install onnxruntime   # macOS: enables the fast embedding backend
+make build                 # -> bin/gandalf
 install -m755 bin/gandalf ~/.local/bin/gandalf
 ```
+
+`make build` says which embedding backend it built with. `make doctor-deps` reports
+what the fast path is missing without building anything. See
+[Which engine does the embedding](#which-engine-does-the-embedding) for why it
+matters.
 
 Then create a vault:
 
@@ -64,7 +70,7 @@ The model does not run git. Gandalf does:
 - Every MCP mutation (and the end of `import` / `update`) becomes a commit.
 - When a remote is configured, `serve` periodically pulls and pushes. Pull
   conflicts resolve as **remote-wins**.
-- The model configures the remote with `gandalf_git_remote` (or you pass
+- The model configures the remote with `git_remote` (or you pass
   `-git-remote` to `init`). Settings live in `.gandalf/git.json`.
 
 Derived search indexes stay out of git via `.gandalf/.gitignore`.
@@ -81,6 +87,33 @@ claude mcp add gandalf -- gandalf serve -vault ~/Documents/Vaults/Gandalf
 
 Add `--scope user` to make it available in every project rather than the current
 one. Check it connected with `claude mcp list`.
+
+### Cursor
+
+Add a stdio server to `~/.cursor/mcp.json` (user-global) or `.cursor/mcp.json`
+(project-local):
+
+```json
+{
+  "mcpServers": {
+    "gandalf": {
+      "type": "stdio",
+      "command": "/Users/you/go/bin/gandalf",
+      "args": ["serve", "-vault", "/Users/you/Documents/Vaults/Gandalf"]
+    }
+  }
+}
+```
+
+Prefer an absolute path for `command` so Cursor does not depend on your shell
+`PATH`. Then add a user rule (or `.cursor/rules/*.mdc` with `alwaysApply: true`):
+
+```markdown
+Call `boot` before doing anything else, and follow what it returns.
+```
+
+Reload MCP from **Settings → MCP**, or restart Cursor, and confirm `gandalf`
+shows as connected.
 
 ### opencode
 
@@ -112,12 +145,12 @@ fresh client at an empty directory is a complete install step.
 
 ### Make the agent call boot
 
-Gandalf works best when the model calls `gandalf_boot` before anything else — that
+Gandalf works best when the model calls `boot` before anything else — that
 is how it receives the operating contract. Most harnesses read a rules file, so add
 a line to `CLAUDE.md`, `AGENTS.md`, or the equivalent:
 
 ```markdown
-Call `gandalf_boot` before doing anything else, and follow what it returns.
+Call `boot` before doing anything else, and follow what it returns.
 ```
 
 ## Search
@@ -143,6 +176,39 @@ gandalf serve -vault DIR -embed http \
 The index lives in `.gandalf/`, is excluded from git by a seeded ignore file, and
 is rebuilt from the notes whenever it disagrees with them. Changing model rebuilds
 it rather than comparing incompatible vectors.
+
+Indexing runs in the background from the moment the server starts. A search issued
+before the first pass finishes answers from what has been indexed so far and says
+so, rather than blocking; `boot` reports the same, so a session knows whether search
+is `ready`, `building`, or `unavailable` before it relies on it.
+
+Build the index up front — worth doing after an import — with:
+
+```
+gandalf reindex -vault DIR          # progress and timing per note
+gandalf reindex -vault DIR -all     # include notes already up to date
+gandalf reindex -vault DIR -quiet   # summary only
+```
+
+### Which engine does the embedding
+
+The in-process model runs on one of two compute backends, and the difference is
+large:
+
+| Backend | Needs | Speed |
+|---|---|---|
+| `onnxruntime` | ONNX Runtime and a build with `-tags ORT` | ~37ms per chunk |
+| `pure-go` | nothing | ~510ms per chunk |
+
+That is roughly fourteen times, measured on the same vault on Apple silicon: 3.2s
+against 44s for 86 chunks, or about ninety seconds against twenty minutes for a
+430-note vault. `reindex` and `boot` both name the backend in use, so a slow index
+is diagnosable rather than mysterious.
+
+ONNX Runtime is the default on macOS, where `make build` fetches what it needs.
+Elsewhere the pure-Go backend is the default, because a build that fails on a fresh
+clone is worse than a slow index. If the native pieces are missing the binary still
+runs — it falls back rather than refusing to start.
 
 ## Importing an existing vault
 
@@ -180,7 +246,8 @@ of the import. Run `gandalf lint` afterwards to see what still needs attention.
 gandalf serve   -vault DIR [-no-seed] [-no-git] [embedding flags]
 gandalf init    [-vault DIR] [-restore] [-git-remote URL] [-no-git]
 gandalf import  -from DIR [-vault DIR] [-rules FILE] [-apply]
-gandalf reindex [-vault DIR] [embedding flags]
+gandalf reindex [-vault DIR] [-quiet] [-all] [embedding flags]
+gandalf update  [-vault DIR]
 gandalf doctor  [-vault DIR]
 gandalf lint    [-vault DIR] [-strict] [NOTE...]
 ```
@@ -199,7 +266,13 @@ warnings with `-strict`.
 `import` moves an existing vault in, preserving dates and rewriting links. It plans
 first and writes nothing without `-apply`.
 
-`reindex` builds the search index up front rather than on the first search.
+`reindex` builds the search index up front rather than leaving it to the background
+pass a running server does. It reports progress and timing per note; `-all` includes
+notes already up to date, `-quiet` prints only the summary.
+
+`update` adopts this build's text for shipped documents you have not edited, leaving
+edited ones alone, and rewrites retired tool names in the documents it leaves — so a
+contract you have corrected keeps naming tools that exist.
 
 ## The vault
 
@@ -236,12 +309,25 @@ internal/server/        MCP tool handlers
 ## Building
 
 ```
-make build      # -> bin/gandalf
-make check      # vet + tests
+make build            # -> bin/gandalf, fast backend where available
+make build ORT=0      # force the pure-Go backend
+make build ORT=1      # force ONNX Runtime, and fail if it is not available
+make deps             # fetch the prebuilt tokenizer archive only
+make doctor-deps      # report what the fast path is missing
+make check            # vet + tests
 ```
 
-CI builds with `CGO_ENABLED=0` on Linux, macOS, and Windows: the binary has no
-native dependencies, including for embeddings.
+The pure-Go build has no native dependencies and works with `CGO_ENABLED=0` on
+Linux, macOS, and Windows.
+
+The ONNX Runtime build needs two native pieces: the `onnxruntime` shared library
+(`brew install onnxruntime`, or your distribution's package), and `libtokenizers.a`,
+a Rust static archive linked at build time. `make build` fetches the prebuilt
+archive for platforms that have one and points the linker at it; on anything else
+you will need to build it from [daulet/tokenizers](https://github.com/daulet/tokenizers).
+
+Set `GANDALF_ONNXRUNTIME` to the directory holding the shared library if it is
+installed somewhere the build does not look.
 
 Tests that download the embedding model are opt-in:
 

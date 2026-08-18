@@ -48,6 +48,7 @@ type Local struct {
 	err      error
 	session  *hugot.Session
 	pipeline *pipelines.FeatureExtractionPipeline
+	backend  Backend
 }
 
 // NewLocal returns an in-process embedder. The model is not loaded until the
@@ -57,6 +58,10 @@ func NewLocal(dir string) *Local { return &Local{Dir: dir} }
 
 // Model identifies the embedding model.
 func (l *Local) Model() string { return LocalModel }
+
+// Backend reports which compute path the model is running on. It is empty
+// until the model has been loaded, since that is when the choice is made.
+func (l *Local) Backend() Backend { return l.backend }
 
 // Dims is the vector length.
 func (l *Local) Dims() int { return localDims }
@@ -117,11 +122,12 @@ func (l *Local) load(ctx context.Context) error {
 			return
 		}
 
-		session, err := hugot.NewGoSession(ctx)
+		session, backend, err := newBestSession(ctx)
 		if err != nil {
 			l.err = fmt.Errorf("start the embedding runtime: %w", err)
 			return
 		}
+		l.backend = backend
 
 		path, err := hugot.DownloadModel(ctx, LocalModel, dir, hugot.NewDownloadOptions())
 		if err != nil {
