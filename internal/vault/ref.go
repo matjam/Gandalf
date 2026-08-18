@@ -109,8 +109,33 @@ func ParseRef(s string) (Ref, error) {
 		return Ref{Kind: kind, Name: rest}, nil
 
 	default:
-		return Ref{}, fmt.Errorf("ref %q: unknown kind %q", s, fields[0])
+		if looksLikePath(s) {
+			return Ref{}, fmt.Errorf(
+				"%q is a file path; notes are addressed by ref, such as session:2026-08-17-slug, "+
+					"project:<name>:design, standard:<name>, topic:<name>, or glossary. "+
+					"Refs come from gandalf_boot, gandalf_lint, or the tool that created the note", s)
+		}
+		return Ref{}, fmt.Errorf("ref %q: unknown kind %q (want one of %s)", s, fields[0], kindList())
 	}
+}
+
+// looksLikePath reports whether the input is a file path rather than a ref.
+// Telling a model it passed a path is worth the special case: it is the one
+// mistake this addressing scheme exists to prevent, and "unknown kind" would
+// send it looking for a different kind rather than a different idea.
+func looksLikePath(s string) bool {
+	return strings.Contains(s, "/") ||
+		strings.EqualFold(path.Ext(s), ".md") ||
+		strings.HasPrefix(s, ".")
+}
+
+// kindList renders the addressable kinds for an error message.
+func kindList() string {
+	return strings.Join([]string{
+		string(KindSession), string(KindMeeting), string(KindInterview),
+		string(KindProject), string(KindStandard), string(KindTopic),
+		string(KindGlossary),
+	}, ", ")
 }
 
 // String returns the ref's textual form.

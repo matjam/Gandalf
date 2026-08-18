@@ -18,8 +18,13 @@ import (
 	"github.com/matjam/gandalf/internal/schema"
 )
 
-// Version is the revision of the shipped instruction set. It is stamped into
-// every seeded document so a later release can tell which version wrote it.
+// Version is the revision of the shipped instruction set, stamped into every
+// seeded document to record what wrote it.
+//
+// It tracks releases, not edits. Drift is detected by comparing content
+// fingerprints, which is exact and needs no help; bumping this on every change
+// to the wording would be churn that told doctor nothing it did not already
+// know.
 const Version = 1
 
 // Frontmatter keys Gandalf writes into seeded documents to track their origin.

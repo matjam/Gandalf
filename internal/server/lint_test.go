@@ -89,8 +89,10 @@ func TestCorrect(t *testing.T) {
 		Reason:   "Three near-identical tests were written where a table would have been clearer.",
 	}, &out)
 
-	if out.Ref != "topic:code-quality" {
-		t.Errorf("ref = %q", out.Ref)
+	// A seeded standard is reachable by its topic id, but what comes back is
+	// the canonical ref for where it lives.
+	if out.Ref != "standard:code-quality" {
+		t.Errorf("ref = %q, want the canonical ref", out.Ref)
 	}
 	if out.History == "" {
 		t.Error("a reason was given but no history entry was recorded")

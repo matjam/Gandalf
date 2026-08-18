@@ -14,11 +14,14 @@ Read the matching topic before proposing or changing work.
 
 | When the work involves | Read |
 |---|---|
-| Git, commits, tests, PRs, CI, releases | `shipping` |
-| Bugs, failures, incidents, latency, unexpected behaviour | `diagnostics` |
-| Issue trackers, wikis, or other shared documents | `external-content` |
-| Personal or sensitive data | `privacy` |
+| Git, commits, tests, PRs, CI, releases | `topic:shipping` |
+| Bugs, failures, incidents, latency, unexpected behaviour | `topic:diagnostics` |
+| Issue trackers, wikis, or other shared documents | `topic:external-content` |
+| Personal or sensitive data | `standard:privacy` |
 | Language, architecture, API, database, security, observability, code quality | the matching standard |
+
+`gandalf_boot` returns the full list with the ref for each. Fetch one with
+`gandalf_topic`.
 
 ## Working Agreement
 
@@ -103,18 +106,27 @@ When the user corrects you, apply the correction immediately and record it with
 `gandalf_correct` in the same response. Corrections belong in the vault, not in
 harness configuration files:
 
-- Universal guidance → this file
-- A scoped procedure → the matching topic
-- An engineering standard → the matching standard
-- The reasoning behind a correction → the correction history
+| Target | For |
+|---|---|
+| `contract` | Universal guidance; the default |
+| `topic:<name>` | A scoped procedure |
+| `standard:<name>` | An engineering standard |
+
+Pass the rule as `guidance`, and what prompted it as `reason`. The rule goes in the
+document; the reason goes to the correction history, which is not read at startup.
+That split is deliberate: a rule has to be read every session, and the incident behind
+it does not.
 
 Add only what is new. Prefer stating what to do over what not to do. Do not duplicate
 a rule across files.
 
 ## Tool Discipline
 
-- Edit files through the harness's own editing tools. Not stream editors, not shell
+- Edit code through the harness's own editing tools. Not stream editors, not shell
   string substitution, regardless of how small the edit is or how urgent it feels.
+- Reach notes in this vault through the Gandalf tools, addressed by ref. Do not read
+  or write vault files directly, and do not construct a path from a filename you saw
+  — where a note lives is Gandalf's business, and it changes.
 - Consult current documentation rather than recalling it. Check current package
   versions before pinning, and take the latest unless there is a stated reason not to.
 - When a library's API does not match your expectation, read that library's changelog

@@ -85,7 +85,7 @@ func (s *Server) boot(ctx context.Context, _ *sdk.CallToolRequest, _ BootInput) 
 
 	for _, doc := range instructions.Topics() {
 		out.Topics = append(out.Topics, TopicSummary{
-			Ref:   "topic:" + doc.ID,
+			Ref:   s.canonical(doc.Path).String(),
 			Title: doc.Title,
 			When:  doc.When,
 		})
@@ -117,10 +117,14 @@ type TopicOutput struct {
 
 // topic returns one instruction document on demand.
 func (s *Server) topic(ctx context.Context, _ *sdk.CallToolRequest, in TopicInput) (*sdk.CallToolResult, TopicOutput, error) {
-	// A bare id is accepted as well as a topic ref: the model has just read a
-	// table of ids, and refusing "shipping" for want of a prefix would be
+	// Boot hands out whichever ref is canonical for each document, so both
+	// kinds are accepted here. A bare id is too: the model has just read a
+	// table of them, and refusing "shipping" for want of a prefix would be
 	// pedantry rather than a safeguard.
-	id := strings.TrimPrefix(strings.TrimSpace(in.Ref), string(vault.KindTopic)+":")
+	id := strings.TrimSpace(in.Ref)
+	for _, prefix := range []vault.Kind{vault.KindTopic, vault.KindStandard} {
+		id = strings.TrimPrefix(id, string(prefix)+":")
+	}
 
 	doc, ok := instructions.Lookup(id)
 	if !ok {

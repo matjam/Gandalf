@@ -10,6 +10,7 @@ package server
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -113,6 +114,12 @@ func (s *Server) Run(ctx context.Context) error {
 func (s *Server) resolve(raw string) (vault.Ref, string, error) {
 	ref, err := vault.ParseRef(raw)
 	if err != nil {
+		// A path is the one wrong answer worth answering properly: the vault
+		// can work out which note was meant, so say so rather than leaving the
+		// caller to guess the scheme from a rejection.
+		if suggestion, ok := s.suggest(raw); ok {
+			return vault.Ref{}, "", fmt.Errorf("%w. That note is addressed as %s", err, suggestion)
+		}
 		return vault.Ref{}, "", err
 	}
 
@@ -121,7 +128,7 @@ func (s *Server) resolve(raw string) (vault.Ref, string, error) {
 		if !ok {
 			return vault.Ref{}, "", fmt.Errorf("ref %q: no such topic", raw)
 		}
-		return ref, doc.Path, nil
+		return s.canonical(doc.Path), doc.Path, nil
 	}
 
 	path, err := s.vault.Resolve(ref)
@@ -129,13 +136,46 @@ func (s *Server) resolve(raw string) (vault.Ref, string, error) {
 		return vault.Ref{}, "", err
 	}
 
-	// Aliases are canonicalised before they leave: a caller that stored
-	// "session:latest" from a result would later read a different note.
-	if ref.Name == vault.Latest {
-		ref = s.vault.Layout().RefFor(path)
+	// What comes back is always the canonical ref, never the one that was
+	// passed in. Aliases matter most here — a caller storing "session:latest"
+	// from a result would later read whichever note was newest then — but the
+	// same applies to a seeded standard reached by its topic id.
+	return s.canonical(path), path, nil
+}
+
+// suggest returns the ref addressing a path a caller passed by mistake, when
+// that path names a note the vault actually holds.
+func (s *Server) suggest(raw string) (vault.Ref, bool) {
+	candidate := strings.TrimSpace(raw)
+	if !strings.HasSuffix(candidate, ".md") {
+		candidate += ".md"
 	}
 
-	return ref, path, nil
+	if !s.vault.Exists(candidate) {
+		return vault.Ref{}, false
+	}
+	return s.canonical(candidate), true
+}
+
+// canonical returns the one ref that addresses a note.
+//
+// Shipped documents are the awkward case: a seeded standard lives where the
+// layout can name it, so it is standard:<name>, while the operating topics
+// live outside the layout's conventions and are reached as topic:<id>. Picking
+// one per note matters — two names for the same note would have boot and lint
+// disagreeing about what to call it.
+func (s *Server) canonical(notePath string) vault.Ref {
+	if ref := s.vault.Layout().RefFor(notePath); ref.Kind != vault.KindPath {
+		return ref
+	}
+
+	for _, doc := range instructions.Docs() {
+		if doc.Path == notePath {
+			return vault.Ref{Kind: vault.KindTopic, Name: doc.ID}
+		}
+	}
+
+	return s.vault.Layout().RefFor(notePath)
 }
 
 // writable resolves a ref and refuses the read-only kinds.
