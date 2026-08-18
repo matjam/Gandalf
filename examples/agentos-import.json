@@ -1,0 +1,79 @@
+{
+  "rules": [
+    {
+      "match": "**/README.md",
+      "skip": true
+    },
+    {
+      "match": "README.md",
+      "skip": true
+    },
+    {
+      "match": "HARNESS.md",
+      "skip": true
+    },
+
+    {
+      "match": "Agent/OS/Operating.md",
+      "skip": true
+    },
+    {
+      "match": "Agent/OS/Memory.md",
+      "skip": true
+    },
+
+    {
+      "match": "Agent/OS/*",
+      "category": "standard",
+      "name": "$1"
+    },
+    {
+      "match": "Agent/Memory/*",
+      "category": "standard",
+      "name": "$1"
+    },
+
+    {
+      "match": "Apps/*/Design.md",
+      "category": "project",
+      "scope": "$1",
+      "facet": "design"
+    },
+    {
+      "match": "Apps/*/Decisions.md",
+      "category": "project",
+      "scope": "$1",
+      "facet": "decisions"
+    },
+    {
+      "match": "Apps/*/Todo.md",
+      "category": "project",
+      "scope": "$1",
+      "facet": "todo"
+    },
+
+    {
+      "match": "Sessions/**",
+      "category": "session"
+    },
+
+    {
+      "match": "Standards/*",
+      "skip": true
+    },
+
+    {
+      "match": "docs/**",
+      "skip": true
+    },
+    {
+      "match": "Side Projects/**",
+      "skip": true
+    },
+
+    {
+      "match": "Apps/**",
+      "skip": true
+    }
+  ]
+}

@@ -30,6 +30,8 @@ func run(args []string) error {
 		return serve(args[1:])
 	case "init":
 		return initVault(args[1:])
+	case "import":
+		return importVault(args[1:])
 	case "reindex":
 		return reindex(args[1:])
 	case "doctor":
@@ -51,6 +53,7 @@ func usage() {
 usage:
   gandalf serve   -vault DIR [-no-seed] [embedding flags]
   gandalf init    [-vault DIR] [-restore]
+  gandalf import  -from DIR [-vault DIR] [-rules FILE] [-apply]
   gandalf reindex [-vault DIR] [embedding flags]
   gandalf doctor  [-vault DIR]
   gandalf lint    [-vault DIR] [-strict] [NOTE...]
@@ -63,6 +66,8 @@ embedding flags:
 
   serve   run the MCP server over stdio, seeding the vault first unless
           -no-seed is given; this is what an agent connects to
+  import  move an existing markdown vault in, preserving dates and
+          rewriting links; prints the plan and writes nothing without -apply
   reindex build the search index up front, rather than on the first search
   init    create the vault if needed and seed any missing GandalfOS
           documents; never overwrites an existing file
