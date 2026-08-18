@@ -36,22 +36,88 @@ belongs in a tool:
 
 ## Install
 
-Requires Go 1.26 or newer.
+Requires Go 1.26 or newer. Nothing else is mandatory:
 
 ```
 git clone https://github.com/matjam/gandalf
 cd gandalf
-brew install onnxruntime   # macOS: enables the fast embedding backend
-make build                 # -> bin/gandalf
+make build            # -> bin/gandalf
 install -m755 bin/gandalf ~/.local/bin/gandalf
 ```
 
-`make build` says which embedding backend it built with. `make doctor-deps` reports
-what the fast path is missing without building anything. See
-[Which engine does the embedding](#which-engine-does-the-embedding) for why it
-matters.
+That always produces a working binary. Whether it produces a *fast* one depends on
+two optional native libraries, because search embeds notes with a model running
+in-process:
 
-Then create a vault:
+| | Needs | Speed |
+|---|---|---|
+| **ONNX Runtime** | `onnxruntime` shared library + `libtokenizers.a` | ~37ms per chunk |
+| **Pure Go** | nothing | ~510ms per chunk |
+
+Roughly fourteen times, measured on the same vault: a 431-note vault indexes in about
+three minutes rather than twenty. Indexing is incremental and runs in the background,
+so the slow backend is liveable — it is the first index that hurts.
+
+`make build` prints which backend it used and never fails over a missing dependency;
+it falls back and says so. `make doctor-deps` reports what the fast path is missing
+without building anything.
+
+### macOS
+
+Both dependencies are available, and ONNX Runtime is the default here:
+
+```
+brew install onnxruntime
+make build            # fetches libtokenizers.a, links against Homebrew's onnxruntime
+```
+
+Apple silicon and Intel are both covered. `make build ORT=0` forces the pure-Go
+backend if you would rather not have the dependency.
+
+### Linux
+
+ONNX Runtime is not the default — pass `ORT=1` once the library is installed.
+Distribution packaging is patchy and often absent from the official repositories, so
+check your package manager first but expect to use Microsoft's build:
+
+```
+curl -sL https://github.com/microsoft/onnxruntime/releases/download/v1.29.0/onnxruntime-linux-x64-1.29.0.tgz | tar xz
+sudo cp -a onnxruntime-linux-x64-1.29.0/lib/libonnxruntime.so* /usr/local/lib/
+sudo ldconfig
+
+make build ORT=1      # fetches libtokenizers.a for your architecture
+```
+
+Use `onnxruntime-linux-aarch64-*.tgz` on 64-bit ARM. `make build` searches
+`/usr/local/lib`, `/usr/lib`, and the Debian multiarch directories; set
+`GANDALF_ONNXRUNTIME` to the directory holding the library if it lives elsewhere.
+
+`make` fetches the glibc tokenizer archive for `amd64`, `arm64`, `ppc64le`, or
+`s390x`. Musl builds are published too but Go's `GOARCH` does not distinguish them,
+so on Alpine take the `linux-musl-*` archive by hand and drop `libtokenizers.a` into
+`.build/lib/` before building. Same for any architecture without a prebuilt: build it
+from [daulet/tokenizers](https://github.com/daulet/tokenizers).
+
+### Windows
+
+Use the pure-Go backend:
+
+```
+go build -o gandalf.exe ./cmd/gandalf
+```
+
+Microsoft publishes ONNX Runtime for Windows, but `libtokenizers` does not ship a
+Windows archive, so the fast path needs a Rust toolchain to build that static library
+yourself. Unless you have a large vault and are willing to do that, the pure-Go
+backend is the sensible choice — everything except embedding throughput is identical.
+
+If you do build the archive: put `onnxruntime.dll` on the loader path or point
+`GANDALF_ONNXRUNTIME` at its directory, put `libtokenizers.a` somewhere the linker
+can see, and build with `-tags ORT` and a cgo-capable toolchain.
+
+### Create a vault
+
+On any platform:
 
 ```
 gandalf init -vault ~/Documents/Vaults/Gandalf
@@ -192,23 +258,9 @@ gandalf reindex -vault DIR -quiet   # summary only
 
 ### Which engine does the embedding
 
-The in-process model runs on one of two compute backends, and the difference is
-large:
-
-| Backend | Needs | Speed |
-|---|---|---|
-| `onnxruntime` | ONNX Runtime and a build with `-tags ORT` | ~37ms per chunk |
-| `pure-go` | nothing | ~510ms per chunk |
-
-That is roughly fourteen times, measured on the same vault on Apple silicon: 3.2s
-against 44s for 86 chunks, or about ninety seconds against twenty minutes for a
-430-note vault. `reindex` and `boot` both name the backend in use, so a slow index
-is diagnosable rather than mysterious.
-
-ONNX Runtime is the default on macOS, where `make build` fetches what it needs.
-Elsewhere the pure-Go backend is the default, because a build that fails on a fresh
-clone is worse than a slow index. If the native pieces are missing the binary still
-runs — it falls back rather than refusing to start.
+`reindex` and `boot` both name the compute backend in use — `onnxruntime` or
+`pure-go` — so a slow index is diagnosable rather than mysterious. See
+[Install](#install) for the difference and how to get the fast one.
 
 ## Importing an existing vault
 

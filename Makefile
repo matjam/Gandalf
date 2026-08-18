@@ -19,10 +19,16 @@ TOKENIZERS_LIB := $(LIBDIR)/libtokenizers.a
 
 # The library directory the loader will be pointed at. Homebrew's prefix is not
 # on the default search path, which is why it is named rather than assumed.
+# Kept in step with ortSearchDirs and ortLibraryNames in internal/embed: the
+# build and the binary must agree on where the library is, or make reports the
+# fast path as available and the binary then falls back at runtime.
 ONNXRUNTIME_DIR := $(shell \
-	for d in /opt/homebrew/lib /usr/local/lib /usr/lib; do \
-		if [ -f "$$d/libonnxruntime.dylib" ] || [ -f "$$d/libonnxruntime.so" ]; then echo "$$d"; break; fi; \
-	done)
+	if [ -n "$$GANDALF_ONNXRUNTIME" ]; then echo "$$GANDALF_ONNXRUNTIME"; else \
+	for d in /opt/homebrew/lib /usr/local/lib /usr/lib /usr/lib/x86_64-linux-gnu /usr/lib/aarch64-linux-gnu; do \
+		for f in libonnxruntime.dylib libonnxruntime.1.dylib libonnxruntime.so libonnxruntime.so.1; do \
+			if [ -f "$$d/$$f" ]; then echo "$$d"; exit 0; fi; \
+		done; \
+	done; fi)
 
 ifeq ($(GOOS),darwin)
 ORT ?= 1
@@ -44,6 +50,15 @@ endif
 ifeq ($(GOOS)/$(GOARCH),linux/amd64)
 TOKENIZERS_ASSET := libtokenizers.linux-amd64.tar.gz
 endif
+ifeq ($(GOOS)/$(GOARCH),linux/ppc64le)
+TOKENIZERS_ASSET := libtokenizers.linux-ppc64le.tar.gz
+endif
+ifeq ($(GOOS)/$(GOARCH),linux/s390x)
+TOKENIZERS_ASSET := libtokenizers.linux-s390x.tar.gz
+endif
+# Windows is absent deliberately: onnxruntime publishes Windows binaries but
+# the tokenizer archive does not, so the fast path there needs a Rust
+# toolchain. The pure-Go backend is the default rather than a failed build.
 
 .PHONY: all build build-ort build-go test vet fmt fmt-check check clean deps doctor-deps
 
