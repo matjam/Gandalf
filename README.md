@@ -5,13 +5,12 @@ an Obsidian-compatible markdown vault where the *tool* owns note metadata, so th
 model spends its attention on the work instead of on frontmatter bookkeeping.
 
 It ships an operating instruction set — GandalfOS — that is seeded into the vault
-on first use and served back to the model through a `gandalf_boot` tool call at
-the start of a session.
+on first use and served back to the model through `gandalf_boot` at the start of a
+session.
 
-**Status: early. Phase 2 of 5.** The note model, schema, linter, and the GandalfOS
-instruction set are built and tested. The MCP server and semantic search are not, so
-today this is a command line tool: it can create a vault and tell you what is wrong
-with one, but nothing is talking to a model yet.
+**Status: working, early.** Everything below runs. It has not yet been used in anger
+across a long-lived vault, so expect rough edges rather than data loss: notes are
+plain files, and everything Gandalf derives from them can be rebuilt.
 
 ## Why
 
@@ -27,73 +26,178 @@ belongs in a tool:
   Obsidian, and keep in git. Gandalf is not a database with a markdown export.
 - **The tool owns metadata.** Notes are created and updated through tool calls
   that generate valid frontmatter. The model writes prose.
+- **Notes are addressed by ref, never by path.** `session:2026-08-17-cache-work`,
+  not `Sessions/2026/08/...`. A model given a path parameter will use it, and will
+  then invent paths of its own.
 - **Structure is enforced, not documented.** A schema violation is a lint
-  finding, not a paragraph of instructions the model may or may not follow.
+  finding, not a paragraph the model may or may not follow.
 - **Recall is semantic.** Finding the note that matters should not depend on
   guessing the words it was written with.
 
-## Design
+## Install
 
-| Decision | Choice |
-|---|---|
-| Distribution | Single static Go binary, stdio MCP server |
-| Storage | Obsidian-compatible markdown; frontmatter as YAML |
-| Index | SQLite, machine-local, rebuildable from the vault |
-| Embeddings | Pluggable: in-process by default, any OpenAI-compatible endpoint otherwise |
-| Instruction set | Embedded in the binary, seeded into the vault, then vault-authoritative |
-
-Seeded instructions are a starting point, not a lock: once a file is in your
-vault it wins, so corrections you make during a session persist. Gandalf reports
-drift from the shipped defaults but never overwrites your edits.
-
-## Layout
+Requires Go 1.26 or newer.
 
 ```
-cmd/gandalf/            command line entry point
-internal/schema/        frontmatter contract: fields, enums, validation
-internal/vault/         note parsing and rendering, filing conventions, linting
-internal/instructions/  the GandalfOS documents, seeding, and drift reporting
+git clone https://github.com/matjam/gandalf
+cd gandalf
+make build            # -> bin/gandalf
+install -m755 bin/gandalf ~/.local/bin/gandalf
 ```
 
-A seeded vault looks like this:
+Then create a vault:
+
+```
+gandalf init -vault ~/Documents/Vaults/Gandalf
+```
+
+That writes the GandalfOS documents, a category declaration, and a seed ledger. It
+never overwrites a file that already exists.
+
+## Connect an agent
+
+Gandalf speaks MCP over stdio. Point your harness at `gandalf serve` with a vault.
+
+### Claude Code
+
+```
+claude mcp add gandalf -- gandalf serve -vault ~/Documents/Vaults/Gandalf
+```
+
+Add `--scope user` to make it available in every project rather than the current
+one. Check it connected with `claude mcp list`.
+
+### opencode
+
+Add it to `~/.config/opencode/opencode.json` (or a project's `opencode.json`):
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "gandalf": {
+      "type": "local",
+      "command": ["gandalf", "serve", "-vault", "/home/you/Documents/Vaults/Gandalf"],
+      "enabled": true
+    }
+  }
+}
+```
+
+### Anything else
+
+Any MCP client that can launch a stdio server will do:
+
+```
+gandalf serve -vault /path/to/vault
+```
+
+The server seeds the vault on startup unless `-no-seed` is given, so pointing a
+fresh client at an empty directory is a complete install step.
+
+### Make the agent call boot
+
+Gandalf works best when the model calls `gandalf_boot` before anything else — that
+is how it receives the operating contract. Most harnesses read a rules file, so add
+a line to `CLAUDE.md`, `AGENTS.md`, or the equivalent:
+
+```markdown
+Call `gandalf_boot` before doing anything else, and follow what it returns.
+```
+
+## Search
+
+Search runs an embedding model in-process by default, downloading it on first use
+and caching it outside the vault. Nothing else needs to be running.
+
+```
+gandalf serve -vault DIR                       # in-process model (default)
+gandalf serve -vault DIR -embed http           # an OpenAI-compatible endpoint
+gandalf serve -vault DIR -embed none           # no search; everything else works
+```
+
+The HTTP backend covers Ollama, llama.cpp's server, LM Studio, and anything else
+speaking the same shape:
+
+```
+gandalf serve -vault DIR -embed http \
+  -embed-url http://localhost:11434/v1 \
+  -embed-model nomic-embed-text -embed-dims 768 -embed-window 8192
+```
+
+The index lives in `.gandalf/`, is excluded from git by a seeded ignore file, and
+is rebuilt from the notes whenever it disagrees with them. Changing model rebuilds
+it rather than comparing incompatible vectors.
+
+## Commands
+
+```
+gandalf serve   -vault DIR [-no-seed] [embedding flags]
+gandalf init    [-vault DIR] [-restore]
+gandalf reindex [-vault DIR] [embedding flags]
+gandalf doctor  [-vault DIR]
+gandalf lint    [-vault DIR] [-strict] [NOTE...]
+```
+
+`init` seeds what is missing and never overwrites. A document you deleted stays
+deleted; `-restore` puts it back.
+
+`doctor` reports how your copy of each shipped document compares with this build —
+unchanged, edited by you, superseded upstream, both, absent, or removed. It only
+reads. Divergence is what happens when the vault is working.
+
+`lint` validates metadata, links, and backlinks. Exits non-zero on errors, or on
+warnings with `-strict`.
+
+`reindex` builds the search index up front rather than on the first search.
+
+## The vault
 
 ```
 Gandalf/     the operating contract and its topics
 Standards/   engineering standards, seeded with opinionated defaults
 Projects/    one folder per project: design, decisions, todo
 Sessions/    one note per unit of work, filed by date
+Meetings/    notes from conversations with other people
+.gandalf/    categories, seed ledger, search index
+```
+
+Those folders come from the categories the vault declares in
+`.gandalf/categories.json`. Add your own, rename them, or retire the ones you do
+not use — what kinds of note the vault keeps is your decision, and the tools
+follow the declaration rather than a list baked into the binary.
+
+Seeded documents are a starting point. Once a file is in your vault it wins, so
+corrections you make during a session persist across releases.
+
+## Layout
+
+```
+cmd/gandalf/            command line entry point
+internal/category/      what kinds of note exist and how each is filed
+internal/schema/        the frontmatter contract and its validation
+internal/vault/         note parsing, refs, wikilinks, backlinks, linting
+internal/index/         chunking, SQLite storage, hybrid search
+internal/embed/         embedding models behind one interface
+internal/instructions/  the GandalfOS documents, seeding, drift reporting
+internal/server/        MCP tool handlers
 ```
 
 ## Building
-
-Requires Go 1.26 or newer.
 
 ```
 make build      # -> bin/gandalf
 make check      # vet + tests
 ```
 
-## Usage
+CI builds with `CGO_ENABLED=0` on Linux, macOS, and Windows: the binary has no
+native dependencies, including for embeddings.
+
+Tests that download the embedding model are opt-in:
 
 ```
-gandalf init   [-vault DIR]
-gandalf doctor [-vault DIR]
-gandalf lint   [-vault DIR] [-strict] [NOTE...]
+GANDALF_MODEL_TESTS=1 go test ./internal/embed/
 ```
-
-`init` creates the vault if it does not exist and writes any GandalfOS document
-missing from it. It never overwrites: a file already there is yours, whether you
-edited it, replaced it, or seeded it from an older release.
-
-`doctor` reports how your copy of each shipped document compares with the one in this
-build — unchanged, edited by you, superseded upstream, both, or absent. It only reads.
-Divergence is what happens when the vault is working, not a fault to be repaired.
-
-`lint` validates note metadata and links. Errors are contract violations — an unknown
-note type, a missing required field, a `related` entry pointing nowhere.
-Warnings are things that are legal but probably unintended, such as an untagged
-note or a dead link in prose. Exits non-zero on errors, or on warnings with
-`-strict`.
 
 ## Licence
 

@@ -2,6 +2,8 @@ package main
 
 import (
 	"flag"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -148,12 +150,17 @@ func TestReindexReportsAnUnreachableModel(t *testing.T) {
 	}
 }
 
-func TestServeAcceptsEmbeddingFlags(t *testing.T) {
+// TestServeValidatesBeforeWriting checks a mistyped flag fails before anything
+// is created: a rejected command should leave nothing behind.
+func TestServeValidatesBeforeWriting(t *testing.T) {
 	silence(t)
 
-	// Bad embedding configuration must fail before the server starts, not
-	// halfway through a session.
-	if err := run([]string{"serve", "-vault", t.TempDir(), "-embed", "magic"}); err == nil {
-		t.Error("serve accepted an unknown embedding backend")
+	root := filepath.Join(t.TempDir(), "vault")
+
+	if err := run([]string{"serve", "-vault", root, "-embed", "magic"}); err == nil {
+		t.Fatal("serve accepted an unknown embedding backend")
+	}
+	if _, err := os.Stat(root); err == nil {
+		t.Error("a rejected command seeded a vault on its way to failing")
 	}
 }

@@ -31,12 +31,14 @@ func serve(args []string) error {
 		return err
 	}
 
-	v, err := prepare(*root, !*noSeed)
+	// Configuration is checked before anything is written: a mistyped flag
+	// should not leave a seeded vault behind on its way to an error.
+	embedder, err := embedding.build()
 	if err != nil {
 		return err
 	}
 
-	embedder, err := embedding.build()
+	v, err := prepare(*root, !*noSeed)
 	if err != nil {
 		return err
 	}
