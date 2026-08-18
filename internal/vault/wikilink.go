@@ -52,6 +52,51 @@ func ParseWikilinks(text string) []Wikilink {
 	return links
 }
 
+// RewriteWikilinks rewrites the target of every wikilink in body text, leaving
+// headings, aliases, and everything outside the delimiters untouched. A rewrite
+// returning the empty string leaves that link as it was.
+//
+// Links inside fenced code blocks are left alone, for the same reason
+// ParseWikilinks ignores them: sample text that mentions a link is not one.
+func RewriteWikilinks(text string, rewrite func(target string) string) string {
+	lines := strings.Split(text, "\n")
+	inFence := false
+
+	for i, line := range lines {
+		if isFenceLine(line) {
+			inFence = !inFence
+			continue
+		}
+		if inFence {
+			continue
+		}
+
+		lines[i] = wikilinkPattern.ReplaceAllStringFunc(line, func(raw string) string {
+			m := wikilinkPattern.FindStringSubmatch(raw)
+			target := rewrite(strings.TrimSpace(m[1]))
+			if target == "" {
+				return raw
+			}
+
+			var b strings.Builder
+			b.WriteString("[[")
+			b.WriteString(target)
+			if heading := strings.TrimSpace(m[2]); heading != "" {
+				b.WriteString("#")
+				b.WriteString(heading)
+			}
+			if alias := strings.TrimSpace(m[3]); alias != "" {
+				b.WriteString("|")
+				b.WriteString(alias)
+			}
+			b.WriteString("]]")
+			return b.String()
+		})
+	}
+
+	return strings.Join(lines, "\n")
+}
+
 // LinkTarget reduces a related-entry to its bare target, tolerating entries
 // that were hand-written with delimiters, a heading, or an alias.
 func LinkTarget(raw string) string {

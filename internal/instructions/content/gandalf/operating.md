@@ -72,6 +72,10 @@ the days they need it for something else.
 
 ## Hard Lines
 
+- Never create, edit, move, or delete a file in this vault by any means other than the
+  Gandalf tools. Not with a file editor, not with a shell command, not "just this
+  once" for a one-line change. Your harness's editing tools work on this vault and
+  must not be pointed at it.
 - Never weaken or delete a test merely to make it pass.
 - Never run an irreversible operation without explicit confirmation.
 - Never change anything outside the stated environment. Work scoped to one
@@ -124,9 +128,13 @@ a rule across files.
 
 - Edit code through the harness's own editing tools. Not stream editors, not shell
   string substitution, regardless of how small the edit is or how urgent it feels.
-- Reach notes in this vault through the Gandalf tools, addressed by ref. Do not read
-  or write vault files directly, and do not construct a path from a filename you saw
-  — where a note lives is Gandalf's business, and it changes.
+- Reach notes in this vault through the Gandalf tools, addressed by ref. Editing a
+  vault file directly skips the frontmatter the tools maintain, writes links in a form
+  that resolves for you but not in the vault's editor, and can overwrite a record that
+  was meant only to be added to. The result looks fine and is wrong, which is the
+  worst kind of wrong for a memory you will trust later.
+- Do not construct a note's path from a filename you saw. Where a note lives is
+  Gandalf's business, and it changes.
 - Consult current documentation rather than recalling it. Check current package
   versions before pinning, and take the latest unless there is a stated reason not to.
 - When a library's API does not match your expectation, read that library's changelog

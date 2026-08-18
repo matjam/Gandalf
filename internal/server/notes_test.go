@@ -276,8 +276,13 @@ func TestNoteUpdate(t *testing.T) {
 	if got := strings.Join(out.Tags, ","); got != "standards,language-rust" {
 		t.Errorf("tags = %q, want standards,language-rust", got)
 	}
-	if got := strings.Join(out.Related, ","); got != "Gandalf/Operating" {
-		t.Errorf("related = %q, want the resolved path of the ref", got)
+	// Refs at the tool boundary, paths on disk: the model gets something it
+	// can pass back, Obsidian gets a link it can follow.
+	if got := strings.Join(out.Related, ","); got != "topic:operating" {
+		t.Errorf("related = %q, want a ref", got)
+	}
+	if raw := diskOf(t, h, created.Ref); !strings.Contains(raw, `"[[Gandalf/Operating]]"`) {
+		t.Errorf("frontmatter does not hold an Obsidian-resolvable path:\n%s", raw)
 	}
 	if out.Status != string(schema.StatusComplete) {
 		t.Errorf("status = %q", out.Status)

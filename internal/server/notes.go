@@ -43,7 +43,7 @@ func (s *Server) noteRead(ctx context.Context, _ *sdk.CallToolRequest, in NoteRe
 		return nil, NoteOutput{}, err
 	}
 
-	return nil, describe(ref, note), nil
+	return nil, s.describe(ref, note), nil
 }
 
 // SessionStartInput describes the session note to create.
@@ -66,11 +66,16 @@ type SessionStartOutput struct {
 // work that slugify the same on one day are far likelier than a deliberate
 // request to start over, and overwriting would destroy the record.
 func (s *Server) sessionStart(ctx context.Context, _ *sdk.CallToolRequest, in SessionStartInput) (*sdk.CallToolResult, SessionStartOutput, error) {
+	resolved := s.resolveLinks(in.Related, "")
+	if err := resolved.err(); err != nil {
+		return nil, SessionStartOutput{}, err
+	}
+
 	note, err := s.vault.NewNote(vault.NewNoteRequest{
 		Type:    schema.TypeSession,
 		Title:   in.Title,
 		Tags:    in.Tags,
-		Related: s.relatedPaths(in.Related),
+		Related: resolved.Related,
 		Author:  schema.AuthorBoth,
 		Status:  schema.StatusInProgress,
 		On:      schema.Today(),
@@ -125,15 +130,20 @@ func (s *Server) noteNew(ctx context.Context, _ *sdk.CallToolRequest, in NoteNew
 		return nil, NoteOutput{}, fmt.Errorf("unknown kind %q (want one of %s)", in.Kind, kindList())
 	}
 
+	resolved := s.resolveLinks(in.Related, in.Content)
+	if err := resolved.err(); err != nil {
+		return nil, NoteOutput{}, err
+	}
+
 	note, err := s.vault.NewNote(vault.NewNoteRequest{
 		Type:    noteType,
 		Title:   in.Title,
 		Scope:   in.Project,
 		Tags:    in.Tags,
-		Related: s.relatedPaths(in.Related),
+		Related: resolved.Related,
 		Author:  schema.AuthorAgent,
 		Status:  schema.Status(in.Status),
-		Body:    in.Content,
+		Body:    resolved.Body,
 		On:      schema.Today(),
 	})
 	if err != nil {
@@ -150,7 +160,7 @@ func (s *Server) noteNew(ctx context.Context, _ *sdk.CallToolRequest, in NoteNew
 		return nil, NoteOutput{}, err
 	}
 
-	return nil, describe(s.vault.Layout().RefFor(note.Path), note), nil
+	return nil, s.describe(s.canonical(note.Path), note), nil
 }
 
 // NoteAppendInput describes content to add to a note.
@@ -171,19 +181,24 @@ func (s *Server) noteAppend(ctx context.Context, _ *sdk.CallToolRequest, in Note
 		return nil, NoteOutput{}, err
 	}
 
+	resolved := s.resolveLinks(nil, in.Content)
+	if err := resolved.err(); err != nil {
+		return nil, NoteOutput{}, err
+	}
+
 	note, err := s.vault.Read(path)
 	if err != nil {
 		return nil, NoteOutput{}, err
 	}
 
-	note.Append(in.Heading, in.Content)
+	note.Append(in.Heading, resolved.Body)
 	note.Touch(schema.Today())
 
 	if err := s.vault.Write(note); err != nil {
 		return nil, NoteOutput{}, err
 	}
 
-	return nil, describe(ref, note), nil
+	return nil, s.describe(ref, note), nil
 }
 
 // NoteUpdateInput describes metadata changes.
@@ -218,8 +233,13 @@ func (s *Server) noteUpdate(ctx context.Context, _ *sdk.CallToolRequest, in Note
 		note.FM.Status = status
 	}
 
+	resolved := s.resolveLinks(in.AddRelated, "")
+	if err := resolved.err(); err != nil {
+		return nil, NoteOutput{}, err
+	}
+
 	note.FM.Tags = add(remove(note.FM.Tags, in.RemoveTags), in.AddTags)
-	note.FM.Related = add(note.FM.Related, s.relatedPaths(in.AddRelated))
+	note.FM.Related = add(note.FM.Related, resolved.Related)
 	note.Touch(schema.Today())
 
 	if issues := note.FM.Validate(); schema.HasErrors(issues) {
@@ -230,27 +250,12 @@ func (s *Server) noteUpdate(ctx context.Context, _ *sdk.CallToolRequest, in Note
 		return nil, NoteOutput{}, err
 	}
 
-	return nil, describe(ref, note), nil
+	return nil, s.describe(ref, note), nil
 }
 
-// relatedPaths converts refs to the link targets stored in frontmatter,
-// leaving anything unresolvable for the linter to report rather than failing
-// the write.
-func (s *Server) relatedPaths(refs []string) []string {
-	out := make([]string, 0, len(refs))
-	for _, raw := range refs {
-		_, path, err := s.resolve(raw)
-		if err != nil {
-			out = append(out, vault.LinkTarget(raw))
-			continue
-		}
-		out = append(out, strings.TrimSuffix(path, ".md"))
-	}
-	return out
-}
-
-// describe renders a note for a tool result.
-func describe(ref vault.Ref, n *vault.Note) NoteOutput {
+// describe renders a note for a tool result, translating the links stored on
+// disk back into refs.
+func (s *Server) describe(ref vault.Ref, n *vault.Note) NoteOutput {
 	return NoteOutput{
 		Ref:     ref.String(),
 		Title:   n.Title(),
@@ -258,9 +263,9 @@ func describe(ref vault.Ref, n *vault.Note) NoteOutput {
 		Created: n.FM.Created.String(),
 		Updated: n.FM.Updated.String(),
 		Tags:    n.FM.Tags,
-		Related: n.FM.Related,
+		Related: s.refsFor(n.FM.Related),
 		Status:  string(n.FM.Status),
-		Content: n.Body,
+		Content: s.toRefs(n.Body),
 	}
 }
 

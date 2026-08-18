@@ -59,7 +59,10 @@ Read-only work creates no notes. Read freely, write nothing.
 - `gandalf_lint` reports schema violations and links pointing nowhere, addressed by
   ref so a finding can be fed straight back in.
 
-You never write a frontmatter block by hand, and you never choose a filename.
+You never write a frontmatter block by hand, never choose a filename, and never open a
+vault file in an editor. Every read and write goes through these tools — that is what
+keeps metadata valid, links resolvable in the vault's own editor, and appended records
+intact.
 
 ## Session Notes
 
