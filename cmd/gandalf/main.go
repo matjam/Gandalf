@@ -30,6 +30,8 @@ func run(args []string) error {
 		return serve(args[1:])
 	case "init":
 		return initVault(args[1:])
+	case "update":
+		return updateVault(args[1:])
 	case "import":
 		return importVault(args[1:])
 	case "reindex":
@@ -53,6 +55,7 @@ func usage() {
 usage:
   gandalf serve   -vault DIR [-no-seed] [embedding flags]
   gandalf init    [-vault DIR] [-restore]
+  gandalf update  [-vault DIR]
   gandalf import  -from DIR [-vault DIR] [-rules FILE] [-apply]
   gandalf reindex [-vault DIR] [embedding flags]
   gandalf doctor  [-vault DIR]
@@ -71,6 +74,8 @@ embedding flags:
   reindex build the search index up front, rather than on the first search
   init    create the vault if needed and seed any missing GandalfOS
           documents; never overwrites an existing file
+  update  adopt this build's text for documents you have not edited,
+          leaving edited and diverged ones alone
   doctor  report how the vault's copy of each shipped document compares
           with this build, without changing anything
   lint    validate note metadata and links; with no NOTE arguments,

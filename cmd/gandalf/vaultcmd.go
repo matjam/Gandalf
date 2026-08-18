@@ -45,6 +45,45 @@ func initVault(args []string) error {
 	return nil
 }
 
+// updateVault adopts this build's text for documents the user has not edited.
+func updateVault(args []string) error {
+	fs := flag.NewFlagSet("update", flag.ContinueOnError)
+	root := fs.String("vault", ".", "path to the vault root")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	v, err := vault.Open(*root)
+	if err != nil {
+		return err
+	}
+
+	results, err := instructions.Update(v, schema.Today())
+	if err != nil {
+		return err
+	}
+
+	for _, r := range results {
+		if r.Updated {
+			fmt.Println("updated", r.Doc.Path)
+		}
+	}
+
+	held := instructions.HeldBack(results)
+	for _, r := range held {
+		fmt.Printf("kept     %-12s %s\n", r.State, r.Doc.Path)
+	}
+
+	fmt.Printf("\n%s: %d updated, %d kept because you had edited them (GandalfOS v%d)\n",
+		v.Root(), instructions.Updated(results), len(held), instructions.Version)
+
+	if len(held) > 0 {
+		fmt.Println("compare those against this build by hand; merging an edit is your call, not the tool's")
+	}
+
+	return nil
+}
+
 // doctor reports how the vault's documents compare with this build.
 func doctor(args []string) error {
 	fs := flag.NewFlagSet("doctor", flag.ContinueOnError)
