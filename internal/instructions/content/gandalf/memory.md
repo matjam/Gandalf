@@ -36,8 +36,10 @@ Before substantive work:
    available on demand, and any session note still open today.
 2. If a session note is already open and this is the same unit of work, continue it
    rather than starting another.
-3. Look for prior work on the same topic before re-deciding anything. For a known
-   project, read its design, decisions, and todo notes.
+3. Look for prior work on the same topic before re-deciding anything. `gandalf_list`
+   shows what the vault holds — recent sessions, which projects exist, which standards
+   are there — without returning any content. For a known project, read its design,
+   decisions, and todo notes.
 4. Distil what you found into a few bullets, surface them to the user, and confirm
    anything stale or consequential before relying on it.
 5. Create the session note with `gandalf_session_start` before proposing or writing
@@ -45,8 +47,11 @@ Before substantive work:
 
 Read-only work creates no notes. Read freely, write nothing.
 
-## Writing
+## Finding and Writing
 
+- `gandalf_list` enumerates the vault by kind — sessions, projects, standards, topics,
+  meetings, interviews — returning refs and titles but no content. Start here when you
+  need to know what exists.
 - `gandalf_session_start` opens the session note and returns its ref. Hold that ref;
   if you lose it, `gandalf_boot` will hand it back.
 - `gandalf_note_new` creates a note of a given kind and returns its ref. Gandalf
@@ -106,6 +111,15 @@ editor understands.
 
 Frontmatter keys Gandalf does not manage are left alone, so anything your editor adds
 survives untouched.
+
+## The Standards Are The User's
+
+The standards seeded into this vault are defaults, not doctrine. The user may rewrite
+them, add their own, or delete the ones they disagree with, and a deleted standard
+stays deleted — Gandalf will not put it back.
+
+Follow what the vault says today, not what you remember a standard saying. If a
+standard is missing, it is missing on purpose.
 
 ## Vault Hygiene
 
