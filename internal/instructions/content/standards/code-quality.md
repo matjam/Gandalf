@@ -14,20 +14,18 @@
 
 ## Dead Code
 
-Delete it. Unused functions, types, variables, imports, and flags all go. Code that
-exists "for later" is code nobody tests and everybody has to read.
+Delete it. Unused functions, types, variables, imports, and flags all go, including
+anything kept "for later".
 
 ## Documentation
 
-Documentation lives with the code, because documentation that lives elsewhere drifts.
+Documentation lives with the code.
 
 - Document assumptions, algorithms, contracts, and anything non-obvious at the entry
   point.
 - Use the language's documentation convention on exported symbols.
-- Do not restate what the code plainly says.
+- Explain why. Do not restate what the code plainly says.
 - No TODO comments without something that tracks them.
-
-Comments explain why. The code already says what.
 
 ## Errors
 

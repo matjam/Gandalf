@@ -27,6 +27,5 @@ doing its job. The last one is the one that gets skipped and the one that matter
 
 ## Choosing Tools
 
-Pick one tracing and metrics stack and use it everywhere. The specific vendor matters
-far less than every service reporting the same field names into the same place —
-consistency is what makes a dashboard possible.
+Pick one tracing and metrics stack and use it everywhere. Which vendor matters less
+than every service reporting the same field names to the same place.

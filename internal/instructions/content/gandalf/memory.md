@@ -54,51 +54,42 @@ Read-only work creates no notes. Read freely, write nothing.
 
 ## Finding and Writing
 
-- `gandalf_search` finds notes by meaning rather than wording, which is what you want
-  when you know the subject but not how it was written down. Results carry refs, so a
-  hit can be read straight away.
+- `gandalf_search` finds notes by meaning rather than wording. Use it when you know the
+  subject but not how it was written down.
 - `gandalf_list` enumerates the vault by category, returning refs and titles but no
-  content. Use it when you know what you are looking for by name.
-- `gandalf_session_start` opens the session note and returns its ref. Hold that ref;
-  if you lose it, `gandalf_boot` will hand it back.
-- `gandalf_note_new` creates a note of a given kind and returns its ref. Gandalf
-  decides where it goes.
-- `gandalf_note_append` is the only way to change a note's body. Nothing already
-  written can be destroyed by it, which is why decisions logs and session notes are
-  safe to keep adding to.
-- `gandalf_note_update` changes metadata only — tags, related links, status. The
-  updated date is maintained for you.
-- `gandalf_note_delete` removes a note, and refuses while anything still links to it,
-  listing what does so the links can be dealt with first.
-- `gandalf_lint` reports schema violations and links pointing nowhere, addressed by
-  ref so a finding can be fed straight back in.
+  content. Use it when you know what you want by name.
+- `gandalf_session_start` opens the session note and returns its ref. Hold that ref; if
+  you lose it, `gandalf_boot` will hand it back.
+- `gandalf_note_new` creates a note of a given kind and returns its ref.
+- `gandalf_note_append` is the only way to change a note's body, and cannot destroy what
+  is already there.
+- `gandalf_note_update` changes metadata only — tags, related links, status.
+- `gandalf_note_delete` removes a note, refusing while anything still links to it and
+  listing what does.
+- `gandalf_lint` reports schema violations and links pointing nowhere.
 
-You never write a frontmatter block by hand, never choose a filename, and never open a
-vault file in an editor. Every read and write goes through these tools — that is what
-keeps metadata valid, links resolvable in the vault's own editor, and appended records
-intact.
+Never write a frontmatter block by hand, never choose a filename, never open a vault
+file in an editor.
 
 ## Links and Backlinks
 
-Write links as refs: `[[standard:language-go]]`. They are stored as vault paths so the
-vault's own editor resolves them, and handed back to you as refs. A link to a note that
-does not exist is refused — create the target first, or leave the link out. Gandalf will
-not write a link it knows is dead, and will not create an empty note to satisfy one.
+Write links as refs: `[[standard:language-go]]`. They are stored as vault paths and
+handed back to you as refs. A link to a note that does not exist is refused — create the
+target first, or leave the link out. No empty note is created to satisfy a link.
 
-Each note carries a `## Backlinks` section listing what points at it, maintained by
-Gandalf. Read it to find out what depends on a note before changing it. Do not write
-into it; it is rewritten whenever links change, and anything you put there is lost.
+Each note carries a `## Backlinks` section listing what points at it. Read it to find
+what depends on a note before changing it. Do not write into it: it is rewritten
+whenever links change.
 
 ## Categories
 
 A category is a kind of note: what it is called, where its notes are filed, and how
-they are addressed. The vault declares its own, so it can keep whatever the work
-actually produces rather than only what Gandalf imagined.
+they are addressed. The vault declares its own.
 
 - `gandalf_category_list` shows what exists, with the ref form for each.
-- `gandalf_category_create` declares a new one. This is a design decision about how the
-  vault is organised, so ask before doing it — do not invent a category to avoid
-  thinking about where a note belongs.
+- `gandalf_category_create` declares a new one. Ask before doing this; it changes how
+  the vault is organised. Do not invent a category to avoid deciding where a note
+  belongs.
 - `gandalf_category_retire` stops new notes being filed under one, leaving the existing
   notes readable and writable.
 - `gandalf_category_delete` removes one entirely, and only when it holds no notes.
@@ -116,8 +107,7 @@ Update the session note as the work happens, not at the end. Capture:
   to do generally and what was actually verified where. Record the environment and
   machine. Do not imply a change is live somewhere it was not verified.
 
-Do not compact session notes. They are the historical record, and their value is that
-they were written at the time.
+Do not compact session notes. They are the record of what was known at the time.
 
 ## Project Notes
 
@@ -139,21 +129,16 @@ stale.
 ## Metadata
 
 Every note carries a type, created and updated dates, tags, related links, an author,
-and an optional status. Keep tags lowercase and hyphenated so they stay usable as
-filters. Pass refs when linking notes; Gandalf converts them to links the vault's
-editor understands.
-
-Frontmatter keys Gandalf does not manage are left alone, so anything your editor adds
-survives untouched.
+and an optional status. Keep tags lowercase and hyphenated. Pass refs when linking
+notes. Frontmatter keys Gandalf does not manage are left alone.
 
 ## The Standards Are The User's
 
-The standards seeded into this vault are defaults, not doctrine. The user may rewrite
-them, add their own, or delete the ones they disagree with, and a deleted standard
-stays deleted — Gandalf will not put it back.
+The seeded standards are defaults. The user may rewrite them, add their own, or delete
+ones they disagree with, and a deleted standard stays deleted.
 
-Follow what the vault says today, not what you remember a standard saying. If a
-standard is missing, it is missing on purpose.
+Follow what the vault says today, not what you remember a standard saying. A missing
+standard is missing on purpose.
 
 ## Vault Hygiene
 

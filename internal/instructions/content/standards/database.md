@@ -9,9 +9,8 @@
 - Define the repository interface where it is consumed and put the implementation in
   an adapter package.
 
-The reasoning is not that ORMs are bad in general. It is that the query is the part
-that will eventually need reading, tuning, and explaining to a database, and hiding it
-behind a fluent API means you find out what it does in production.
+The query is the part that eventually needs reading, tuning, and explaining to a
+database. Keep it visible.
 
 ## Migrations
 

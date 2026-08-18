@@ -21,12 +21,11 @@ exhibit the failure are directly available.
 
 ## Diagnosis Before Mitigation
 
-A mitigation built on an unconfirmed diagnosis is worse than no mitigation: it hides
-the symptom that would have led to the cause, and leaves the bug in the tree behind a
-workaround. Confirm what is actually happening first. Then fix it.
+Confirm what is actually happening before mitigating. A mitigation built on an
+unconfirmed diagnosis hides the symptom that would have led to the cause.
 
-If a mitigation genuinely has to ship before the diagnosis is complete, say so
-explicitly, and say what evidence is still missing.
+If one has to ship before the diagnosis is complete, say so, and say what evidence is
+still missing.
 
 ## Verification Levels
 
