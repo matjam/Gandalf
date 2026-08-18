@@ -34,6 +34,23 @@ func Apply(dst *vault.Vault, plan *Plan) (Result, error) {
 	var result Result
 	dangling := map[string]bool{}
 
+	// Nothing is written until every note is known to be writable. Build
+	// already routes notes with unresolved issues away from Moves, so this is
+	// a guard against a hand-built plan rather than the expected path — but it
+	// is what makes apply all-or-nothing: a note the vault would refuse can no
+	// longer abort the run partway and leave the destination half-migrated.
+	var refused []string
+	for _, move := range plan.Moves {
+		if len(move.Note.Issues) > 0 {
+			refused = append(refused, fmt.Sprintf("%s (%s)", move.Source, issuesReason(move.Note.Issues)))
+		}
+	}
+	if len(refused) > 0 {
+		sort.Strings(refused)
+		return result, fmt.Errorf("refusing to import: %d note(s) carry unresolved frontmatter issues and would fail to write:\n  %s",
+			len(refused), strings.Join(refused, "\n  "))
+	}
+
 	for _, move := range plan.Moves {
 		note := move.Note
 		note.Path = move.Target
@@ -55,8 +72,8 @@ func Apply(dst *vault.Vault, plan *Plan) (Result, error) {
 		note.SetBacklinks(nil)
 
 		// A note carrying unresolved parse issues would be refused on write;
-		// the plan already reported those as unmapped, so anything here is
-		// sound enough to store.
+		// the pre-flight check above has already excluded those, so anything
+		// reaching here is sound enough to store.
 		if err := dst.Write(note); err != nil {
 			return result, fmt.Errorf("import %q: %w", move.Source, err)
 		}
@@ -75,15 +92,20 @@ func Apply(dst *vault.Vault, plan *Plan) (Result, error) {
 	return result, nil
 }
 
-// rewriteTargets repoints a list of link targets.
+// rewriteTargets repoints a list of related link targets, dropping any whose
+// target was not part of the import.
+//
+// A related entry names a note this one is about; once its target is not in
+// the vault, it is a broken metadata reference rather than prose a reader can
+// judge for themselves, so it is removed. Body wikilinks are treated the other
+// way — left as written — because deleting words from a note is a heavier act
+// than pruning a link list.
 func rewriteTargets(targets []string, links map[string]string, dangling map[string]bool, count *int) []string {
 	out := make([]string, 0, len(targets))
 	for _, target := range targets {
 		if moved := rewriteTarget(target, links, dangling, count); moved != "" {
 			out = append(out, moved)
-			continue
 		}
-		out = append(out, target)
 	}
 	return out
 }

@@ -41,6 +41,19 @@ type Note struct {
 // error only when there is no usable frontmatter block; schema problems are
 // reported through Note.Issues.
 func ParseNote(path string, data []byte) (*Note, error) {
+	return parseNote(path, data, false)
+}
+
+// ParseNoteCoercing parses like ParseNote but reads a bare number or boolean
+// where a string list is expected as its string form, so a note the importer
+// could otherwise not write — a tag YAML decoded as the number 7695 — arrives
+// intact. Ordinary reads use ParseNote and stay strict.
+func ParseNoteCoercing(path string, data []byte) (*Note, error) {
+	return parseNote(path, data, true)
+}
+
+// parseNote is the shared body of ParseNote and ParseNoteCoercing.
+func parseNote(path string, data []byte, coerce bool) (*Note, error) {
 	text := strings.TrimPrefix(string(data), "\uFEFF")
 	text = strings.ReplaceAll(text, "\r\n", "\n")
 
@@ -60,7 +73,7 @@ func ParseNote(path string, data []byte) (*Note, error) {
 		return nil, fmt.Errorf("%s: %w", path, ErrUnterminatedFrontmatter)
 	}
 
-	fm, issues, err := parseFrontmatter(strings.Join(lines[:end], "\n"))
+	fm, issues, err := parseFrontmatter(strings.Join(lines[:end], "\n"), coerce)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}

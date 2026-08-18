@@ -358,6 +358,100 @@ func TestBareNameLinksAreMatched(t *testing.T) {
 	}
 }
 
+// TestNumericTagsAreCoercedOnImport covers a note whose tag YAML decoded as a
+// number: strict parsing would refuse it, but the importer reads it as the
+// string form so the note migrates intact.
+func TestNumericTagsAreCoercedOnImport(t *testing.T) {
+	src := source(t, map[string]string{
+		"Sessions/2026/04/2026-04-02-work.md": "---\ntype: session\ncreated: 2026-04-02\n" +
+			"updated: 2026-04-02\ntags:\n  - pp\n  - 7695\nauthor: user\n---\n\n# Work\n\nProse.\n",
+	})
+	dst := destination(t)
+
+	plan, err := Build(src, dst, &Rules{})
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if len(plan.Moves) != 1 {
+		t.Fatalf("moves = %+v, want one; invalid = %+v", plan.Moves, plan.Invalid)
+	}
+	if len(plan.Invalid) != 0 {
+		t.Errorf("invalid = %+v, want none", plan.Invalid)
+	}
+
+	if _, err := Apply(dst, plan); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	imported, err := dst.Read("Sessions/2026/04/2026-04-02-work.md")
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if got := strings.Join(imported.FM.Tags, ","); got != "pp,7695" {
+		t.Errorf("tags = %q, want the numeric tag kept as a string", got)
+	}
+}
+
+// TestNotesWithUnresolvableIssuesAreReported covers a note that parses but
+// carries frontmatter the destination would refuse: it must appear in the plan
+// as invalid rather than being counted as importable.
+func TestNotesWithUnresolvableIssuesAreReported(t *testing.T) {
+	src := source(t, map[string]string{
+		"Sessions/2026/04/2026-04-02-work.md": "---\ntype: session\ncreated: 2026-04-02\n" +
+			"updated: 2026-04-02\ntags:\n  key: value\nauthor: user\n---\n\n# Work\n",
+	})
+	dst := destination(t)
+
+	plan, err := Build(src, dst, &Rules{})
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if len(plan.Moves) != 0 {
+		t.Errorf("moves = %+v, want none", plan.Moves)
+	}
+	if len(plan.Invalid) != 1 {
+		t.Fatalf("invalid = %+v, want the one bad note", plan.Invalid)
+	}
+	if !strings.Contains(plan.Summary(), "invalid") {
+		t.Errorf("summary omits the invalid group:\n%s", plan.Summary())
+	}
+}
+
+// TestApplyRefusesIssueNotes checks apply is all-or-nothing: a plan carrying a
+// note the vault would refuse writes nothing at all rather than aborting
+// partway through.
+func TestApplyRefusesIssueNotes(t *testing.T) {
+	dst := destination(t)
+
+	good, err := vault.ParseNote("Sessions/2026/05/2026-05-01-good.md",
+		[]byte("---\ntype: session\ncreated: 2026-05-01\nupdated: 2026-05-01\ntags: [ok]\nauthor: user\n---\n\n# Good\n"))
+	if err != nil {
+		t.Fatalf("ParseNote(good): %v", err)
+	}
+	bad, err := vault.ParseNote("Sessions/2026/05/2026-05-02-bad.md",
+		[]byte("---\ntype: session\ncreated: 2026-05-02\nupdated: 2026-05-02\ntags: [7]\nauthor: user\n---\n\n# Bad\n"))
+	if err != nil {
+		t.Fatalf("ParseNote(bad): %v", err)
+	}
+	if len(bad.Issues) == 0 {
+		t.Fatal("expected the numeric tag to leave an issue under strict parsing")
+	}
+
+	plan := &Plan{
+		Links: map[string]string{},
+		Moves: []Move{
+			{Source: "good.md", Target: good.Path, Category: "session", Note: good},
+			{Source: "bad.md", Target: bad.Path, Category: "session", Note: bad},
+		},
+	}
+
+	if _, err := Apply(dst, plan); err == nil {
+		t.Fatal("Apply accepted a plan with an unwritable note")
+	}
+	if dst.Exists(good.Path) {
+		t.Error("apply wrote the good note despite refusing the plan; it is not all-or-nothing")
+	}
+}
+
 func TestPlanSummary(t *testing.T) {
 	src := source(t, map[string]string{
 		"Sessions/2026/05/2026-05-01-work.md": note("session", "2026-05-01", "# Work\n"),
@@ -401,6 +495,37 @@ func TestScopedNotesNeedTheirFields(t *testing.T) {
 		if len(plan.Unmapped) != 1 {
 			t.Errorf("rule %+v did not report a problem", rule)
 		}
+	}
+}
+
+// TestDanglingRelatedLinksAreStripped covers the split policy: a related entry
+// whose target is not in the import is removed as a broken metadata reference,
+// while the same target in prose is left as written.
+func TestDanglingRelatedLinksAreStripped(t *testing.T) {
+	src := source(t, map[string]string{
+		"Sessions/2026/05/2026-05-01-work.md": "---\ntype: session\ncreated: 2026-05-01\n" +
+			"updated: 2026-05-01\ntags: [work]\nrelated:\n  - \"[[Apps/Skipped/Design]]\"\n" +
+			"author: user\n---\n\n# Work\n\nSee [[Apps/Skipped/Design]].\n",
+	})
+	dst := destination(t)
+
+	plan, err := Build(src, dst, &Rules{})
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if _, err := Apply(dst, plan); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+
+	imported, err := dst.Read("Sessions/2026/05/2026-05-01-work.md")
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if len(imported.FM.Related) != 0 {
+		t.Errorf("related = %v, want the out-of-import entry dropped", imported.FM.Related)
+	}
+	if !strings.Contains(imported.Body, "[[Apps/Skipped/Design]]") {
+		t.Errorf("the prose link was removed:\n%s", imported.Body)
 	}
 }
 

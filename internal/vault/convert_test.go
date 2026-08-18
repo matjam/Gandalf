@@ -98,7 +98,7 @@ func TestParseFrontmatterTolerance(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			fm, issues, err := parseFrontmatter(tc.block)
+			fm, issues, err := parseFrontmatter(tc.block, false)
 			if err != nil {
 				t.Fatalf("parseFrontmatter: %v", err)
 			}
@@ -117,8 +117,111 @@ func TestParseFrontmatterTolerance(t *testing.T) {
 	}
 }
 
+// TestParseFrontmatterCoercion covers the importer's tolerant mode: a bare
+// number or boolean where a string list is expected is read as its string
+// form rather than reported, while strict parsing still reports it.
+func TestParseFrontmatterCoercion(t *testing.T) {
+	tests := []struct {
+		name     string
+		block    string
+		wantTags string
+	}{
+		{name: "numeric list entry", block: "tags: [pp, 7695, query]", wantTags: "pp,7695,query"},
+		{name: "boolean list entry", block: "tags:\n  - one\n  - true", wantTags: "one,true"},
+		{name: "bare number", block: "tags: 207", wantTags: "207"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			// Strict parsing reports the bad entry and drops the field.
+			if _, issues, err := parseFrontmatter(tc.block, false); err != nil {
+				t.Fatalf("parseFrontmatter(strict): %v", err)
+			} else if len(issues) == 0 {
+				t.Errorf("strict parse of %q reported no issue", tc.block)
+			}
+
+			// Coercing parsing accepts it as strings.
+			fm, issues, err := parseFrontmatter(tc.block, true)
+			if err != nil {
+				t.Fatalf("parseFrontmatter(coerce): %v", err)
+			}
+			if len(issues) != 0 {
+				t.Errorf("coercing parse of %q reported issues: %+v", tc.block, issues)
+			}
+			if got := strings.Join(fm.Tags, ","); got != tc.wantTags {
+				t.Errorf("tags = %q, want %q", got, tc.wantTags)
+			}
+		})
+	}
+}
+
+// TestCoercionNormalizesTagShape covers the importer reshaping tags a source
+// vault wrote in forms the schema forbids, keeping the meaning while making
+// them uniform. Strict parsing leaves them untouched — tag shape is a lint
+// concern there, not a parse one.
+func TestCoercionNormalizesTagShape(t *testing.T) {
+	tests := []struct {
+		block    string
+		wantTags string
+	}{
+		{block: "tags: [PP-7819, account_aggregation]", wantTags: "pp-7819,account-aggregation"},
+		{block: "tags: [CDK, EKS]", wantTags: "cdk,eks"},
+		{block: "tags: [logTurnstileRequest, gpt-5.6-sol]", wantTags: "logturnstilerequest,gpt-5-6-sol"},
+		{block: "tags: [already-fine, s3SDK]", wantTags: "already-fine,s3sdk"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.block, func(t *testing.T) {
+			fm, issues, err := parseFrontmatter(tc.block, true)
+			if err != nil {
+				t.Fatalf("parseFrontmatter(coerce): %v", err)
+			}
+			if len(issues) != 0 {
+				t.Errorf("coercing parse reported issues: %+v", issues)
+			}
+			if got := strings.Join(fm.Tags, ","); got != tc.wantTags {
+				t.Errorf("tags = %q, want %q", got, tc.wantTags)
+			}
+		})
+	}
+}
+
+// TestCoercionMapsStatusSynonyms covers the importer folding a hand-kept
+// vault's free-form status values onto the closed set the schema allows, while
+// leaving an unrecognised value for lint to report.
+func TestCoercionMapsStatusSynonyms(t *testing.T) {
+	tests := []struct {
+		in   string
+		want string
+	}{
+		{in: "completed", want: "complete"},
+		{in: "verified-fix", want: "complete"},
+		{in: "verified-closed", want: "complete"},
+		{in: "complete", want: "complete"},
+		{in: "in-progress", want: "in-progress"},
+		{in: "bananas", want: "bananas"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.in, func(t *testing.T) {
+			fm, _, err := parseFrontmatter("status: "+tc.in, true)
+			if err != nil {
+				t.Fatalf("parseFrontmatter: %v", err)
+			}
+			if string(fm.Status) != tc.want {
+				t.Errorf("status = %q, want %q", fm.Status, tc.want)
+			}
+		})
+	}
+
+	// Strict parsing does not remap.
+	if fm, _, _ := parseFrontmatter("status: completed", false); string(fm.Status) != "completed" {
+		t.Errorf("strict status = %q, want it left as completed", fm.Status)
+	}
+}
+
 func TestParseFrontmatterRejectsInvalidYAML(t *testing.T) {
-	if _, _, err := parseFrontmatter("type: session\n  bad indent: [unclosed"); err == nil {
+	if _, _, err := parseFrontmatter("type: session\n  bad indent: [unclosed", false); err == nil {
 		t.Error("parseFrontmatter accepted invalid YAML, want error")
 	}
 }
@@ -140,7 +243,7 @@ func TestIssueMessagesNameTheType(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.want+" in "+tc.block, func(t *testing.T) {
-			_, issues, err := parseFrontmatter(tc.block)
+			_, issues, err := parseFrontmatter(tc.block, false)
 			if err != nil {
 				t.Fatalf("parseFrontmatter: %v", err)
 			}

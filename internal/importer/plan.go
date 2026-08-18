@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/matjam/gandalf/internal/category"
+	"github.com/matjam/gandalf/internal/schema"
 	"github.com/matjam/gandalf/internal/vault"
 )
 
@@ -39,6 +40,11 @@ type Plan struct {
 	// Unmapped notes matched no rule and have no usable frontmatter type.
 	Unmapped []Problem
 
+	// Invalid notes parse but carry frontmatter the destination would refuse
+	// on write, such as a field of the wrong YAML type. Reporting them here is
+	// what keeps the plan an honest prediction of what apply will do.
+	Invalid []Problem
+
 	// Conflicts would overwrite something already in the destination.
 	Conflicts []Problem
 
@@ -64,7 +70,16 @@ func Build(src, dst *vault.Vault, rules *Rules) (*Plan, error) {
 	taken := map[string]string{}
 
 	for _, sourcePath := range paths {
-		note, err := src.Read(sourcePath)
+		// A skip rule applies to a path, not to a note, so it is honoured
+		// before the file is read: a source the user has chosen to leave
+		// behind should not be reported as unreadable just because it is.
+		rule, matched := rules.Match(sourcePath)
+		if matched && rule.Skip {
+			plan.Skipped = append(plan.Skipped, Problem{Source: sourcePath, Reason: "matched a skip rule"})
+			continue
+		}
+
+		note, err := src.ReadCoercing(sourcePath)
 		if err != nil {
 			plan.Unmapped = append(plan.Unmapped, Problem{
 				Source: sourcePath,
@@ -73,9 +88,11 @@ func Build(src, dst *vault.Vault, rules *Rules) (*Plan, error) {
 			continue
 		}
 
-		rule, matched := rules.Match(sourcePath)
-		if matched && rule.Skip {
-			plan.Skipped = append(plan.Skipped, Problem{Source: sourcePath, Reason: "matched a skip rule"})
+		// A note the destination would refuse on write must not be counted as
+		// importable: the plan is meant to predict apply, and apply writes
+		// through the vault, which rejects unresolved frontmatter issues.
+		if len(note.Issues) > 0 {
+			plan.Invalid = append(plan.Invalid, Problem{Source: sourcePath, Reason: issuesReason(note.Issues)})
 			continue
 		}
 
@@ -192,6 +209,7 @@ func (p *Plan) Summary() string {
 	}{
 		{"skipped", p.Skipped},
 		{"unmapped", p.Unmapped},
+		{"invalid", p.Invalid},
 		{"conflicts", p.Conflicts},
 	} {
 		for _, problem := range group.problems {
@@ -199,10 +217,23 @@ func (p *Plan) Summary() string {
 		}
 	}
 
-	fmt.Fprintf(&b, "\n%d to import, %d skipped, %d unmapped, %d conflicting\n",
-		len(p.Moves), len(p.Skipped), len(p.Unmapped), len(p.Conflicts))
+	fmt.Fprintf(&b, "\n%d to import, %d skipped, %d unmapped, %d invalid, %d conflicting\n",
+		len(p.Moves), len(p.Skipped), len(p.Unmapped), len(p.Invalid), len(p.Conflicts))
 
 	return b.String()
+}
+
+// issuesReason renders a note's frontmatter issues into one line for the plan.
+func issuesReason(issues []schema.Issue) string {
+	parts := make([]string, 0, len(issues))
+	for _, i := range issues {
+		if i.Field != "" {
+			parts = append(parts, fmt.Sprintf("%s: %s", i.Field, i.Message))
+			continue
+		}
+		parts = append(parts, i.Message)
+	}
+	return strings.Join(parts, "; ")
 }
 
 // trimExt removes a path's extension.

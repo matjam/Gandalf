@@ -67,9 +67,9 @@ func importVault(args []string) error {
 
 	fmt.Printf("\nimported %d note(s), rewrote %d link(s)\n", result.Imported, result.Rewritten)
 	if len(result.Dangling) > 0 {
-		fmt.Printf("%d link target(s) were not part of the import and were left alone:\n  %s\n",
+		fmt.Printf("%d link target(s) were not part of the import: prose links to them were kept, related-metadata links removed:\n  %s\n",
 			len(result.Dangling), strings.Join(result.Dangling, "\n  "))
-		fmt.Println("run `gandalf lint` to see which notes carry them")
+		fmt.Println("run `gandalf lint` to see which notes still reference them in prose")
 	}
 
 	return nil

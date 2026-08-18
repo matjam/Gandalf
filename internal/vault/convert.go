@@ -2,6 +2,7 @@ package vault
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -22,7 +23,13 @@ var managedKeys = map[string]bool{
 // Values of the wrong shape become issues rather than errors, so a caller can
 // report everything wrong with a note in one pass. An error is returned only
 // when the block is not valid YAML at all.
-func parseFrontmatter(block string) (schema.Frontmatter, []schema.Issue, error) {
+//
+// With coerce set, a list value the schema wants as strings accepts bare
+// numbers and booleans as their string form. YAML reads a tag written 7695 as
+// a number, but the author unambiguously meant the string "7695"; the importer
+// turns this on so such a note migrates rather than being refused, while
+// ordinary reads stay strict so nothing is silently reshaped in place.
+func parseFrontmatter(block string, coerce bool) (schema.Frontmatter, []schema.Issue, error) {
 	raw := map[string]any{}
 	if strings.TrimSpace(block) != "" {
 		if err := yaml.Unmarshal([]byte(block), &raw); err != nil {
@@ -58,6 +65,9 @@ func parseFrontmatter(block string) (schema.Frontmatter, []schema.Issue, error) 
 	}
 	if v, ok := raw["status"]; ok {
 		if s, err := scalarString(v); err == nil {
+			if coerce {
+				s = coerceStatus(s)
+			}
 			fm.Status = schema.Status(s)
 		} else {
 			bad("status", "%s", err)
@@ -90,16 +100,21 @@ func parseFrontmatter(block string) (schema.Frontmatter, []schema.Issue, error) 
 	}
 
 	if v, ok := raw["tags"]; ok {
-		tags, err := stringList(v)
+		tags, err := stringList(v, coerce)
 		if err != nil {
 			bad("tags", "%s", err)
 		} else {
+			if coerce {
+				for i := range tags {
+					tags[i] = normalizeTag(tags[i])
+				}
+			}
 			fm.Tags = tags
 		}
 	}
 
 	if v, ok := raw["related"]; ok {
-		related, err := stringList(v)
+		related, err := stringList(v, coerce)
 		if err != nil {
 			bad("related", "%s", err)
 		} else {
@@ -145,8 +160,9 @@ func dateValue(v any) (schema.Date, error) {
 }
 
 // stringList accepts a YAML sequence of strings, and tolerates a bare string
-// as a one-element list.
-func stringList(v any) ([]string, error) {
+// as a one-element list. With coerce set, bare numbers and booleans are read
+// as their string form rather than rejected.
+func stringList(v any, coerce bool) ([]string, error) {
 	switch t := v.(type) {
 	case nil:
 		return nil, nil
@@ -157,13 +173,89 @@ func stringList(v any) ([]string, error) {
 		for i, item := range t {
 			s, ok := item.(string)
 			if !ok {
+				if coerce {
+					if c, cok := coerceScalar(item); cok {
+						out = append(out, c)
+						continue
+					}
+				}
 				return nil, fmt.Errorf("entry %d: expected a string, got %s", i+1, yamlKind(item))
 			}
 			out = append(out, s)
 		}
 		return out, nil
 	default:
+		if coerce {
+			if c, ok := coerceScalar(v); ok {
+				return []string{c}, nil
+			}
+		}
 		return nil, fmt.Errorf("expected a list, got %s", yamlKind(v))
+	}
+}
+
+// tagSeparators is any run of characters a tag is not allowed to contain:
+// everything but a lowercase letter or digit.
+var tagSeparators = regexp.MustCompile(`[^a-z0-9]+`)
+
+// normalizeTag reshapes a tag into the lowercase-hyphenated form the schema
+// requires, so a vault that wrote "PP-7819" or "account_aggregation" keeps the
+// meaning while gaining the mechanical uniformity that makes tags usable as
+// filters. A tag with nothing usable in it is returned unchanged, to be
+// reported rather than silently emptied.
+func normalizeTag(tag string) string {
+	shaped := strings.Trim(tagSeparators.ReplaceAllString(strings.ToLower(tag), "-"), "-")
+	if shaped == "" {
+		return tag
+	}
+	return shaped
+}
+
+// statusSynonyms maps the free-form status values a hand-kept vault
+// accumulates onto the closed set the schema allows. Only unambiguous synonyms
+// are mapped; an unrecognised status is left untouched, to be reported rather
+// than guessed at.
+var statusSynonyms = map[string]schema.Status{
+	"completed":       schema.StatusComplete,
+	"done":            schema.StatusComplete,
+	"closed":          schema.StatusComplete,
+	"verified":        schema.StatusComplete,
+	"verified-fix":    schema.StatusComplete,
+	"verified-closed": schema.StatusComplete,
+	"fixed":           schema.StatusComplete,
+	"resolved":        schema.StatusComplete,
+	"wip":             schema.StatusInProgress,
+	"in progress":     schema.StatusInProgress,
+	"ongoing":         schema.StatusInProgress,
+	"deprecated":      schema.StatusSuperseded,
+	"obsolete":        schema.StatusSuperseded,
+}
+
+// coerceStatus maps a known status synonym onto the schema's value, leaving
+// anything already valid or unrecognised as it is.
+func coerceStatus(s string) string {
+	key := strings.ToLower(strings.TrimSpace(s))
+	if schema.Status(key).Valid() {
+		return key
+	}
+	if mapped, ok := statusSynonyms[key]; ok {
+		return string(mapped)
+	}
+	return s
+}
+
+// coerceScalar renders a YAML scalar the schema wanted as a string. It covers
+// the numbers and booleans a bare, unquoted value decodes to; anything more
+// structured has no unambiguous string form and is left for the caller to
+// report.
+func coerceScalar(v any) (string, bool) {
+	switch t := v.(type) {
+	case string:
+		return t, true
+	case int, int64, uint64, float64, bool:
+		return fmt.Sprintf("%v", t), true
+	default:
+		return "", false
 	}
 }
 

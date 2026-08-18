@@ -84,6 +84,22 @@ func (v *Vault) Read(rel string) (*Note, error) {
 	return ParseNote(path.Clean(rel), data)
 }
 
+// ReadCoercing parses the note at a vault-relative path, reading a bare number
+// or boolean where a string list is expected as its string form. The importer
+// uses it so a note carrying such a value migrates rather than being refused;
+// everything else reads through Read and stays strict.
+func (v *Vault) ReadCoercing(rel string) (*Note, error) {
+	abs, err := v.abs(rel)
+	if err != nil {
+		return nil, err
+	}
+	data, err := os.ReadFile(abs)
+	if err != nil {
+		return nil, fmt.Errorf("read note %q: %w", rel, err)
+	}
+	return ParseNoteCoercing(path.Clean(rel), data)
+}
+
 // Write serialises a note to disk, creating parent directories as needed.
 //
 // Notes carrying unresolved parse issues are refused: their affected fields
