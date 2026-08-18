@@ -104,47 +104,6 @@ func (s *Server) boot(ctx context.Context, _ *sdk.CallToolRequest, _ BootInput) 
 	return nil, out, nil
 }
 
-// TopicInput selects one topic.
-type TopicInput struct {
-	Ref string `json:"ref" jsonschema:"the topic ref from gandalf_boot, such as topic:shipping"`
-}
-
-// TopicOutput is a topic's full text.
-type TopicOutput struct {
-	Document
-}
-
-// topic returns one instruction document on demand.
-func (s *Server) topic(ctx context.Context, _ *sdk.CallToolRequest, in TopicInput) (*sdk.CallToolResult, TopicOutput, error) {
-	// Boot hands out whichever ref is canonical for each document, so both
-	// kinds are accepted here. A bare id is too: the model has just read a
-	// table of them, and refusing "shipping" for want of a prefix would be
-	// pedantry rather than a safeguard.
-	id := strings.TrimSpace(in.Ref)
-	if kind, name, ok := strings.Cut(id, ":"); ok {
-		if _, isCategory := s.vault.Categories().Lookup(kind); isCategory || kind == KindTopic {
-			id = name
-		}
-	}
-
-	doc, ok := instructions.Lookup(id)
-	if !ok {
-		return nil, TopicOutput{}, fmt.Errorf("no topic %q; call gandalf_boot for the list", in.Ref)
-	}
-
-	content, source, err := s.document(doc)
-	if err != nil {
-		return nil, TopicOutput{}, err
-	}
-
-	return nil, TopicOutput{Document{
-		ID:      doc.ID,
-		Title:   doc.Title,
-		Content: content,
-		Source:  source,
-	}}, nil
-}
-
 // document returns a shipped document's text, preferring the vault's copy.
 func (s *Server) document(doc instructions.Doc) (content, source string, err error) {
 	if s.vault.Exists(doc.Path) {

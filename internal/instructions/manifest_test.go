@@ -54,10 +54,10 @@ func TestManifestIntegrity(t *testing.T) {
 				t.Error("no tags; the linter warns about untagged notes")
 			}
 
-			switch doc.Role {
-			case RoleCore, RoleTopic, RoleReference:
+			switch doc.Delivery {
+			case AtBoot, Listed, Unlisted:
 			default:
-				t.Errorf("unknown role %q", doc.Role)
+				t.Errorf("unknown role %q", doc.Delivery)
 			}
 		})
 	}
@@ -109,7 +109,7 @@ func TestRelatedLinksResolve(t *testing.T) {
 	}
 }
 
-func TestRolePartition(t *testing.T) {
+func TestDeliveryPartition(t *testing.T) {
 	core, topics := Core(), Topics()
 	if len(core) == 0 {
 		t.Error("no core documents; boot would return nothing")
@@ -119,13 +119,13 @@ func TestRolePartition(t *testing.T) {
 	}
 
 	for _, d := range core {
-		if d.Role != RoleCore {
-			t.Errorf("Core() returned %q with role %q", d.ID, d.Role)
+		if d.Delivery != AtBoot {
+			t.Errorf("Core() returned %q with delivery %q", d.ID, d.Delivery)
 		}
 	}
 	for _, d := range topics {
-		if d.Role != RoleTopic {
-			t.Errorf("Topics() returned %q with role %q", d.ID, d.Role)
+		if d.Delivery != Listed {
+			t.Errorf("Topics() returned %q with delivery %q", d.ID, d.Delivery)
 		}
 	}
 }
@@ -145,7 +145,7 @@ func TestLookup(t *testing.T) {
 func TestCoreDocumentsAreReachable(t *testing.T) {
 	var core []Doc
 	for _, d := range Docs() {
-		if d.Role == RoleCore {
+		if d.Delivery == AtBoot {
 			core = append(core, d)
 		}
 	}
@@ -158,7 +158,7 @@ func TestCoreDocumentsAreReachable(t *testing.T) {
 
 	// The operating contract carries the topic table, so it must be core.
 	operating, ok := Lookup("operating")
-	if !ok || operating.Role != RoleCore {
+	if !ok || operating.Delivery != AtBoot {
 		t.Error("the operating contract must be a core document")
 	}
 }

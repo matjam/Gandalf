@@ -38,19 +38,25 @@ const (
 //go:embed content
 var content embed.FS
 
-// Role says how a document reaches the model.
-type Role string
+// Delivery says how a document is put in front of the model.
+//
+// It controls delivery and nothing else. Every shipped document is readable by
+// ref and searchable unless excluded from the index; naming these values after
+// the document's nature rather than its delivery invited exactly that
+// confusion, so they are named for what they do.
+type Delivery string
 
 const (
-	// RoleCore is returned by boot, in full, at the start of every session.
-	RoleCore Role = "core"
+	// AtBoot is returned in full at the start of every session.
+	AtBoot Delivery = "at-boot"
 
-	// RoleTopic is fetched on demand when the work touches its subject.
-	RoleTopic Role = "topic"
+	// Listed appears in the boot payload's topic table, to be fetched when the
+	// work touches its subject.
+	Listed Delivery = "listed"
 
-	// RoleReference is written for humans reading the vault; the model reads
-	// it only if something points there.
-	RoleReference Role = "reference"
+	// Unlisted is neither returned nor advertised. It is still readable by ref
+	// and, unless NoIndex says otherwise, still turns up in search.
+	Unlisted Delivery = "unlisted"
 )
 
 // Doc is one shipped document: where it comes from, where it goes, and when
@@ -65,10 +71,10 @@ type Doc struct {
 	// Path is where the document is written in the vault.
 	Path string
 
-	Title string
-	Type  schema.NoteType
-	Role  Role
-	Tags  []string
+	Title    string
+	Type     schema.NoteType
+	Delivery Delivery
+	Tags     []string
 
 	// Related are wikilink targets, without delimiters.
 	Related []string
@@ -132,7 +138,7 @@ func Lookup(id string) (Doc, bool) {
 func Topics() []Doc {
 	var out []Doc
 	for _, d := range docs {
-		if d.Role == RoleTopic {
+		if d.Delivery == Listed {
 			out = append(out, d)
 		}
 	}
@@ -143,7 +149,7 @@ func Topics() []Doc {
 func Core() []Doc {
 	var out []Doc
 	for _, d := range docs {
-		if d.Role == RoleCore {
+		if d.Delivery == AtBoot {
 			out = append(out, d)
 		}
 	}

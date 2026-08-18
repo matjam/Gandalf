@@ -144,7 +144,7 @@ func TestToolsAreRegistered(t *testing.T) {
 	}
 
 	for _, want := range []string{
-		"gandalf_boot", "gandalf_topic", "gandalf_note_read", "gandalf_session_start",
+		"gandalf_boot", "gandalf_note_read", "gandalf_session_start",
 		"gandalf_note_new", "gandalf_note_append", "gandalf_note_update",
 		"gandalf_lint", "gandalf_correct",
 	} {
@@ -192,8 +192,8 @@ func TestBoot(t *testing.T) {
 
 	// Every advertised topic must be fetchable by the ref boot handed out.
 	for _, topic := range out.Topics {
-		var got TopicOutput
-		h.call("gandalf_topic", TopicInput{Ref: topic.Ref}, &got)
+		var got NoteOutput
+		h.call("gandalf_note_read", NoteReadInput{Ref: topic.Ref}, &got)
 		if got.Content == "" {
 			t.Errorf("%s returned no content", topic.Ref)
 		}
@@ -254,17 +254,49 @@ func TestBootFallsBackWhenUnseeded(t *testing.T) {
 	}
 }
 
-func TestTopicAcceptsBareID(t *testing.T) {
+// TestOneReadVerb covers the merge: reading a shipped document and reading a
+// note are the same question, so they are the same tool. All three ways of
+// naming a topic reach it.
+func TestOneReadVerb(t *testing.T) {
 	h := newHarness(t)
 
-	var withPrefix, bare TopicOutput
-	h.call("gandalf_topic", TopicInput{Ref: "topic:shipping"}, &withPrefix)
-	h.call("gandalf_topic", TopicInput{Ref: "shipping"}, &bare)
+	var byRef, bare, byStandard NoteOutput
+	h.call("gandalf_note_read", NoteReadInput{Ref: "topic:shipping"}, &byRef)
+	h.call("gandalf_note_read", NoteReadInput{Ref: "shipping"}, &bare)
+	h.call("gandalf_note_read", NoteReadInput{Ref: "standard:privacy"}, &byStandard)
 
-	if withPrefix.Content != bare.Content {
-		t.Error("a bare topic id returned different content from its ref")
+	if byRef.Content != bare.Content {
+		t.Error("a bare id returned different content from its ref")
 	}
-	if msg := h.callErr("gandalf_topic", TopicInput{Ref: "topic:nonexistent"}); !strings.Contains(msg, "no topic") {
+	if byRef.Content == "" || byStandard.Content == "" {
+		t.Error("a shipped document came back empty")
+	}
+	if byRef.Ref != "topic:shipping" || byStandard.Ref != "standard:privacy" {
+		t.Errorf("refs = %q and %q", byRef.Ref, byStandard.Ref)
+	}
+
+	if msg := h.callErr("gandalf_note_read", NoteReadInput{Ref: "topic:nonexistent"}); !strings.Contains(msg, "no such topic") {
 		t.Errorf("error = %q, want it to name the missing topic", msg)
+	}
+}
+
+// TestShippedDocumentsSurviveAnUnseededVault checks the fallback the merged
+// tool inherited: a contract read from the binary beats no contract at all.
+func TestShippedDocumentsSurviveAnUnseededVault(t *testing.T) {
+	v, err := vault.Open(t.TempDir())
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+
+	s := New(v, "test")
+	_, out, err := s.noteRead(context.Background(), nil, NoteReadInput{Ref: "topic:operating"})
+	if err != nil {
+		t.Fatalf("noteRead: %v", err)
+	}
+	if out.Source != "shipped" {
+		t.Errorf("source = %q, want shipped", out.Source)
+	}
+	if !strings.Contains(out.Content, "Operating Contract") {
+		t.Errorf("content = %q", out.Content)
 	}
 }

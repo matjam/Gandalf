@@ -51,13 +51,18 @@ func (s *Server) noteDelete(ctx context.Context, _ *sdk.CallToolRequest, in Note
 			ref, strings.Join(refs, ", "))
 	}
 
+	// Read the note before removing it: whatever it pointed at needs its
+	// backlinks trimmed, and afterwards there is nothing left to ask.
+	var outgoing []string
+	if note, err := s.vault.Read(path); err == nil {
+		outgoing = note.OutgoingLinks()
+	}
+
 	if err := s.vault.Delete(path); err != nil {
 		return nil, NoteDeleteOutput{}, err
 	}
 
-	// The deleted note's own outgoing links are now gone, so whatever it
-	// pointed at needs its backlinks trimmed.
-	rebuilt, err := s.vault.RebuildBacklinks()
+	rebuilt, err := s.vault.ApplyBacklinks(path, outgoing, nil)
 	if err != nil {
 		return nil, NoteDeleteOutput{}, err
 	}

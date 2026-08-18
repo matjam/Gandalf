@@ -70,6 +70,111 @@ func (idx *LinkIndex) Outgoing(notePath string) []string {
 	return dedupe(links)
 }
 
+// ApplyBacklinks updates the notes whose inbound links changed when source's
+// outgoing links went from old to new, and reports which it rewrote.
+//
+// This is the write path. Rebuilding the whole vault on every write is correct
+// and costs a full read of every note; here the set of affected notes is known
+// exactly — the targets the source stopped linking to, and the ones it started
+// linking to — so the work is proportional to a note's links rather than to
+// the vault's size. Resolving names still needs the list of note paths, but
+// that is a directory walk rather than a read of every file.
+//
+// Drift is possible if notes are changed outside these tools, which is what
+// RebuildBacklinks and the lint check exist for.
+func (v *Vault) ApplyBacklinks(sourcePath string, old, new []string) ([]string, error) {
+	paths, err := v.List()
+	if err != nil {
+		return nil, err
+	}
+	resolver := newIndex(paths)
+
+	source := strings.TrimSuffix(path.Clean(sourcePath), path.Ext(sourcePath))
+
+	before := resolve(resolver, sourcePath, old)
+	after := resolve(resolver, sourcePath, new)
+
+	var changed []string
+	for target := range before {
+		if after[target] {
+			continue
+		}
+		ok, err := v.editBacklinks(target, source, false)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			changed = append(changed, target)
+		}
+	}
+	for target := range after {
+		if before[target] {
+			continue
+		}
+		ok, err := v.editBacklinks(target, source, true)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			changed = append(changed, target)
+		}
+	}
+
+	sort.Strings(changed)
+	return changed, nil
+}
+
+// editBacklinks adds or removes one entry from a note's maintained block,
+// reporting whether the note needed changing.
+func (v *Vault) editBacklinks(targetPath, source string, add bool) (bool, error) {
+	note, err := v.Read(targetPath)
+	if err != nil {
+		// A target that cannot be parsed is lint's problem; failing the write
+		// that happened to link to it would be the wrong place to complain.
+		return false, nil
+	}
+
+	links := note.Backlinks()
+	updated := make([]string, 0, len(links)+1)
+	found := false
+	for _, l := range links {
+		if l == source {
+			found = true
+			continue
+		}
+		updated = append(updated, l)
+	}
+
+	switch {
+	case add && found:
+		return false, nil
+	case add:
+		updated = append(updated, source)
+	case !found:
+		return false, nil
+	}
+
+	note.SetBacklinks(updated)
+	if err := v.Write(note); err != nil {
+		return false, fmt.Errorf("update backlinks in %q: %w", targetPath, err)
+	}
+	return true, nil
+}
+
+// resolve turns a note's link targets into the paths they address, dropping
+// anything unresolvable or pointing at the note itself.
+func resolve(resolver *noteIndex, sourcePath string, targets []string) map[string]bool {
+	out := map[string]bool{}
+	for _, target := range targets {
+		resolved := resolver.resolve(target)
+		if resolved == "" || resolved == path.Clean(sourcePath) {
+			continue
+		}
+		out[resolved] = true
+	}
+	return out
+}
+
 // RebuildBacklinks brings every note's maintained block into line with what
 // actually links to it, and reports which notes changed.
 //

@@ -96,6 +96,15 @@ func Seed(v *vault.Vault, on schema.Date, restore bool) ([]SeedResult, error) {
 		if err := ledger.Save(v); err != nil {
 			return nil, err
 		}
+
+		// Seeded documents cross-reference each other, and they are written
+		// straight to disk rather than through the tools, so nothing has
+		// maintained their backlinks. One full rebuild is cheaper here than a
+		// delta per document, and it leaves a fresh vault passing its own
+		// linter.
+		if _, err := v.RebuildBacklinks(); err != nil {
+			return nil, err
+		}
 	}
 
 	return results, nil

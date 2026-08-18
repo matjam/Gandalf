@@ -34,6 +34,12 @@ func TestLintCleanVault(t *testing.T) {
 		}
 	}
 
+	// Write is the primitive and does not maintain backlinks; something above
+	// it does, which for a bulk load is a single rebuild.
+	if _, err := v.RebuildBacklinks(); err != nil {
+		t.Fatalf("RebuildBacklinks: %v", err)
+	}
+
 	findings, err := v.Lint()
 	if err != nil {
 		t.Fatalf("Lint: %v", err)

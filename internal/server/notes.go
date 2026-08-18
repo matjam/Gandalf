@@ -7,6 +7,7 @@ import (
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/matjam/gandalf/internal/instructions"
 	"github.com/matjam/gandalf/internal/schema"
 	"github.com/matjam/gandalf/internal/vault"
 )
@@ -32,13 +33,43 @@ type NoteOutput struct {
 	Related []string `json:"related"`
 	Status  string   `json:"status,omitempty"`
 	Content string   `json:"content"`
+
+	// Source is set to "shipped" when the text came from the binary because
+	// the vault has no copy, and is otherwise omitted.
+	Source string `json:"source,omitempty"`
 }
 
-// noteRead returns one note.
+// noteRead returns one note, whether it is something the vault holds or one of
+// the documents Gandalf ships.
+//
+// There is one read verb rather than two. A separate tool for shipped
+// documents differed only in falling back to the built-in text when the vault
+// lacked a copy, which is rare enough not to justify a second way of asking
+// the same question — and it was misnamed, since it served standards as
+// readily as topics.
 func (s *Server) noteRead(ctx context.Context, _ *sdk.CallToolRequest, in NoteReadInput) (*sdk.CallToolResult, NoteOutput, error) {
 	ref, path, err := s.resolve(in.Ref)
 	if err != nil {
 		return nil, NoteOutput{}, err
+	}
+
+	if !s.vault.Exists(path) {
+		// A shipped document missing from the vault is served from the binary
+		// rather than refused: a session with no contract is worse than one
+		// reading the default.
+		if doc, ok := shippedAt(path); ok {
+			body, docErr := doc.Body()
+			if docErr != nil {
+				return nil, NoteOutput{}, docErr
+			}
+			return nil, NoteOutput{
+				Ref:     ref.String(),
+				Title:   doc.Title,
+				Type:    string(doc.Type),
+				Content: s.toRefs(body),
+				Source:  "shipped",
+			}, nil
+		}
 	}
 
 	note, err := s.vault.Read(path)
@@ -47,6 +78,16 @@ func (s *Server) noteRead(ctx context.Context, _ *sdk.CallToolRequest, in NoteRe
 	}
 
 	return nil, s.describe(ref, note), nil
+}
+
+// shippedAt returns the shipped document filed at a vault path.
+func shippedAt(path string) (instructions.Doc, bool) {
+	for _, doc := range instructions.Docs() {
+		if doc.Path == path {
+			return doc, true
+		}
+	}
+	return instructions.Doc{}, false
 }
 
 // SessionStartInput describes the session note to create.
@@ -206,30 +247,26 @@ func (s *Server) noteAppend(ctx context.Context, _ *sdk.CallToolRequest, in Note
 	return nil, s.describe(ref, note), nil
 }
 
-// write saves a note and brings the vault's backlinks back into line.
+// write saves a note and updates the backlinks of whatever it now links to,
+// or has stopped linking to.
 //
-// Backlinks are rebuilt on every write rather than tracked incrementally.
-// Adding a link means another note's block is now wrong, and the only way to
-// know which notes are affected is to look — an incremental scheme would be
-// faster and would eventually disagree with the notes themselves.
+// Only those notes are touched. Writing a note never changes that note's own
+// block — a link it holds is an inbound link somewhere else — so nothing needs
+// re-reading afterwards either.
 func (s *Server) write(note *vault.Note) error {
+	var before []string
+	if s.vault.Exists(note.Path) {
+		if previous, err := s.vault.Read(note.Path); err == nil {
+			before = previous.OutgoingLinks()
+		}
+	}
+
 	if err := s.vault.Write(note); err != nil {
 		return err
 	}
 
-	if _, err := s.vault.RebuildBacklinks(); err != nil {
-		return err
-	}
-
-	// The note may have gained a backlinks block of its own during the
-	// rebuild, so re-read it before it is described back to the caller.
-	fresh, err := s.vault.Read(note.Path)
-	if err != nil {
-		return err
-	}
-	*note = *fresh
-
-	return nil
+	_, err := s.vault.ApplyBacklinks(note.Path, before, note.OutgoingLinks())
+	return err
 }
 
 // NoteUpdateInput describes metadata changes.

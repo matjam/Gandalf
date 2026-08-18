@@ -67,12 +67,6 @@ func (s *Server) MCP() *sdk.Server {
 	}, s.boot)
 
 	sdk.AddTool(srv, &sdk.Tool{
-		Name: "gandalf_topic",
-		Description: "Fetch one topic or standard by id, as listed by gandalf_boot. " +
-			"Read the matching topic before proposing or changing work it covers.",
-	}, s.topic)
-
-	sdk.AddTool(srv, &sdk.Tool{
 		Name: "gandalf_search",
 		Description: "Find notes by meaning, not just wording. Use this before starting work " +
 			"to see what the vault already says about a topic. Returns refs, so a hit can be " +
@@ -88,8 +82,10 @@ func (s *Server) MCP() *sdk.Server {
 
 	sdk.AddTool(srv, &sdk.Tool{
 		Name: "gandalf_note_read",
-		Description: "Read a note by ref. Refs come from gandalf_boot, gandalf_lint, or " +
-			"whichever tool created the note; they are never constructed from a file path.",
+		Description: "Read a note or an operating topic by ref. Refs come from gandalf_boot, " +
+			"gandalf_search, gandalf_list, or whichever tool created the note; they are never " +
+			"constructed from a file path. Read the matching topic before proposing or " +
+			"changing work it covers.",
 	}, s.noteRead)
 
 	sdk.AddTool(srv, &sdk.Tool{
@@ -189,6 +185,13 @@ func (s *Server) resolve(raw string) (vault.Ref, string, error) {
 
 	ref, err := s.vault.ParseRef(raw)
 	if err != nil {
+		// A bare shipped-document id is accepted: the model has just read a
+		// table of them, and refusing "shipping" for want of a prefix would be
+		// pedantry rather than a safeguard.
+		if doc, found := instructions.Lookup(strings.TrimSpace(raw)); found {
+			return s.canonical(doc.Path), doc.Path, nil
+		}
+
 		// A path is the one wrong answer worth answering properly: the vault
 		// can work out which note was meant, so say so rather than leaving the
 		// caller to guess the scheme from a rejection.

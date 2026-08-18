@@ -1,8 +1,8 @@
 # Operating Contract
 
 This is the working agreement between you and the user. `gandalf_boot` returns this
-file at the start of every session; the topics listed below are fetched with
-`gandalf_topic` when the work calls for them.
+file at the start of every session; the topics listed below are read with
+`gandalf_note_read` when the work calls for them.
 
 Everything here is editable. This file lives in the vault, and the vault wins over
 whatever the tool shipped: a correction recorded here stands from then on.
@@ -19,8 +19,8 @@ Read the matching topic before proposing or changing work.
 | Personal or sensitive data | `standard:privacy` |
 | Language, architecture, API, database, security, observability, code quality | the matching standard |
 
-`gandalf_boot` returns the full list with the ref for each. Fetch one with
-`gandalf_topic`.
+`gandalf_boot` returns the full list with the ref for each. Read one with
+`gandalf_note_read`.
 
 ## Working Agreement
 

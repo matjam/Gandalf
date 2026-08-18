@@ -58,6 +58,8 @@ Read-only work creates no notes. Read freely, write nothing.
   subject but not how it was written down.
 - `gandalf_list` enumerates the vault by category, returning refs and titles but no
   content. Use it when you know what you want by name.
+- `gandalf_note_read` reads a note, or one of the operating topics, by ref. Search and
+  listings return refs; pass one straight back to read it in full.
 - `gandalf_session_start` opens the session note and returns its ref. Hold that ref; if
   you lose it, `gandalf_boot` will hand it back.
 - `gandalf_note_new` creates a note of a given kind and returns its ref.

@@ -47,6 +47,14 @@ func (v *Vault) Lint(paths ...string) ([]Finding, error) {
 
 	index := newIndex(all)
 
+	// Backlinks are maintained incrementally on write, so nothing repairs them
+	// if a note is changed outside these tools. Checking them here is what
+	// makes that trade safe.
+	inbound, err := v.inboundLinks(all)
+	if err != nil {
+		return nil, err
+	}
+
 	var findings []Finding
 	for _, rel := range targets {
 		rel = path.Clean(rel)
@@ -59,7 +67,7 @@ func (v *Vault) Lint(paths ...string) ([]Finding, error) {
 			})
 			continue
 		}
-		findings = append(findings, v.lintNote(note, index)...)
+		findings = append(findings, v.lintNote(note, index, inbound[rel])...)
 	}
 
 	sort.SliceStable(findings, func(i, j int) bool {
@@ -83,7 +91,7 @@ func HasErrors(findings []Finding) bool {
 }
 
 // lintNote runs every check that applies to a single note.
-func (v *Vault) lintNote(n *Note, index *noteIndex) []Finding {
+func (v *Vault) lintNote(n *Note, index *noteIndex, inbound []string) []Finding {
 	var findings []Finding
 
 	at := func(issue schema.Issue, line int) {
@@ -126,7 +134,37 @@ func (v *Vault) lintNote(n *Note, index *noteIndex) []Finding {
 
 	findings = append(findings, lintLinks(n, index)...)
 
+	if !equal(n.Backlinks(), inbound) {
+		findings = append(findings, Finding{
+			Path:     n.Path,
+			Severity: schema.SeverityWarning,
+			Message: fmt.Sprintf("backlinks are out of date: %d recorded, %d actual. Run `gandalf reindex` to rebuild them",
+				len(n.Backlinks()), len(inbound)),
+		})
+	}
+
 	return findings
+}
+
+// inboundLinks maps each note to the notes linking at it, as the link targets
+// a backlinks block records.
+func (v *Vault) inboundLinks(paths []string) (map[string][]string, error) {
+	resolver := newIndex(paths)
+	out := map[string][]string{}
+
+	for _, source := range paths {
+		note, err := v.Read(source)
+		if err != nil {
+			continue
+		}
+
+		name := strings.TrimSuffix(source, path.Ext(source))
+		for target := range resolve(resolver, source, note.OutgoingLinks()) {
+			out[target] = append(out[target], name)
+		}
+	}
+
+	return out, nil
 }
 
 // lintLinks reports related entries and body wikilinks whose targets are not
