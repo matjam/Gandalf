@@ -26,6 +26,8 @@ type NoteReplaceInput struct {
 	From           string `json:"from,omitempty" jsonschema:"literal text marking the start of the span; must appear exactly once"`
 	To             string `json:"to,omitempty" jsonschema:"literal text marking the end of the span; must appear exactly once, after from"`
 	IncludeAnchors bool   `json:"include_anchors,omitempty" jsonschema:"also replace the anchors themselves; by default they are kept"`
+
+	Force bool `json:"force,omitempty" jsonschema:"rewrite a note that is normally append-only, such as a session or a decisions log. Use it to repair a defect — a missing title, a broken link, malformed prose — not to tidy or reword a record of what was known at the time"`
 }
 
 // NoteReplaceOutput is the note as it now stands, plus the text that went.
@@ -36,6 +38,10 @@ type NoteReplaceOutput struct {
 	// not say what it is deleting, so this is the only way for a caller to
 	// check that it deleted what it meant to.
 	Removed string `json:"removed"`
+
+	// Forced reports that an append-only note was rewritten. It is echoed back
+	// so the act shows up in the transcript rather than only in the git log.
+	Forced bool `json:"forced,omitempty"`
 }
 
 // target is which part of a note a replacement addresses.
@@ -59,11 +65,26 @@ func (s *Server) noteReplace(ctx context.Context, _ *sdk.CallToolRequest, in Not
 		return nil, NoteReplaceOutput{}, err
 	}
 
+	// An append-only note is protected by default, not sealed. The guard is
+	// there to stop a record of what was known at the time being quietly
+	// reworded into what is known now — an accident worth making hard. It is
+	// not there to leave a defect unfixable: a note with no title, a broken
+	// link, or prose mangled on import needs repairing, and refusing outright
+	// would mean either living with it or editing the file behind Gandalf's
+	// back, which loses the frontmatter and link maintenance that are the
+	// point of going through the tools.
+	//
+	// Forcing is safe to offer because every change is committed as it is
+	// made, so the prior text is one git revert away.
+	forced := false
 	if m := s.mutability(path); m != category.Replaceable {
-		return nil, NoteReplaceOutput{}, fmt.Errorf(
-			"%s is %s: it records what was known at the time rather than describing the current "+
-				"state, so nothing already written there may be rewritten. Add to it with "+
-				"gandalf_note_append instead", ref, m)
+		if !in.Force {
+			return nil, NoteReplaceOutput{}, fmt.Errorf(
+				"%s is %s: it records what was known at the time rather than describing the current "+
+					"state. Add to it with gandalf_note_append, or pass force to rewrite it anyway "+
+					"when you are repairing a defect rather than revising the record", ref, m)
+		}
+		forced = true
 	}
 
 	// Read before write, for the same reason the harness's own editing tools
@@ -106,10 +127,16 @@ func (s *Server) noteReplace(ctx context.Context, _ *sdk.CallToolRequest, in Not
 		return nil, NoteReplaceOutput{}, err
 	}
 
-	s.record("gandalf: note replace " + ref.String())
+	message := "gandalf: note replace " + ref.String()
+	if forced {
+		message = "gandalf: note replace " + ref.String() + " (forced, append-only)"
+	}
+	s.record(message)
+
 	return nil, NoteReplaceOutput{
 		NoteOutput: s.describe(ref, note),
 		Removed:    s.toRefs(removed),
+		Forced:     forced,
 	}, nil
 }
 

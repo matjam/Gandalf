@@ -262,3 +262,65 @@ func TestNoteReplaceRefusesDeadLinks(t *testing.T) {
 		t.Errorf("error = %q", msg)
 	}
 }
+
+// TestReplaceForcesAnAppendOnlyNote covers repairing a defect in a record.
+//
+// The guard on an append-only note stops a chronological record being reworded
+// into what is known now. It must not stop a genuine repair: a session note
+// that arrived from an import with no title has a defect, and refusing to fix
+// it only pushes the edit outside Gandalf, where frontmatter and links stop
+// being maintained.
+func TestReplaceForcesAnAppendOnlyNote(t *testing.T) {
+	h := newHarness(t)
+
+	var session SessionStartOutput
+	h.call("gandalf_session_start", SessionStartInput{Title: "Untitled Work"}, &session)
+	h.call("gandalf_note_append", NoteAppendInput{Ref: session.Ref, Content: "What happened."}, nil)
+
+	// Without force it stays refused, and the refusal has to say how to
+	// proceed rather than merely saying no.
+	msg := h.callErr("gandalf_note_replace", NoteReplaceInput{
+		Ref:     session.Ref,
+		Content: "# Repaired\n\nWhat happened.",
+	})
+	if !strings.Contains(msg, "force") {
+		t.Errorf("refusal does not mention force: %s", msg)
+	}
+
+	var out NoteReplaceOutput
+	h.call("gandalf_note_replace", NoteReplaceInput{
+		Ref:     session.Ref,
+		Content: "# Repaired\n\nWhat happened.",
+		Force:   true,
+	}, &out)
+
+	if !out.Forced {
+		t.Error("a forced rewrite was not reported as forced")
+	}
+
+	var after NoteOutput
+	h.call("gandalf_note_read", NoteReadInput{Ref: session.Ref}, &after)
+	if !strings.Contains(after.Content, "# Repaired") {
+		t.Error("the repair did not land")
+	}
+}
+
+// TestReplaceForceIsNotNeededForAReplaceableNote keeps the flag from becoming
+// something a caller sets out of habit.
+func TestReplaceForceIsNotNeededForAReplaceableNote(t *testing.T) {
+	h := newHarness(t)
+
+	var note NoteOutput
+	h.call("gandalf_note_read", NoteReadInput{Ref: "standard:language-go"}, &note)
+
+	var out NoteReplaceOutput
+	h.call("gandalf_note_replace", NoteReplaceInput{
+		Ref:     "standard:language-go",
+		Section: "Tooling",
+		Content: "- Run the race detector in CI.",
+	}, &out)
+
+	if out.Forced {
+		t.Error("a replaceable note was reported as a forced rewrite")
+	}
+}

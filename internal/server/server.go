@@ -167,8 +167,9 @@ func (s *Server) MCP() *sdk.Server {
 			"a backlog, a standard. Name a section to rewrite just that section, or give " +
 			"from and to anchors to rewrite the span between them; with neither, the whole " +
 			"body is replaced. Returns the text it removed, so check that against what you " +
-			"meant to remove. Refused on notes that are a chronological record, such as " +
-			"sessions and decision logs: append to those instead. Read the note first.",
+			"meant to remove. Refused by default on notes that are a chronological record, " +
+			"such as sessions and decision logs: append to those instead, or pass force to " +
+			"repair a defect in one. Read the note first.",
 	}, s.noteReplace)
 
 	sdk.AddTool(srv, &sdk.Tool{

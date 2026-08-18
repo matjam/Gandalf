@@ -114,6 +114,15 @@ what the note is for, not how careful you are being.
 `gandalf_category_list` reports which is which, and `gandalf_note_replace` refuses an
 append-only note rather than letting you find out afterwards.
 
+That refusal is a default, not a seal. Pass `force` to rewrite an append-only note when
+you are repairing a defect — a missing title, a broken link, prose mangled on import —
+rather than revising what the note says happened. The distinction is whether the note is
+wrong about its own subject or merely inconvenient to read now. Every change is
+committed as it is made, so a forced rewrite is one revert away; the reason to be
+careful is the record, not the recoverability. Repairing a note inside Gandalf is always
+better than editing the file behind its back, which is what the alternative to `force`
+actually is.
+
 Even where replacement is allowed, prefer the narrowest edit that does the job: a
 section rather than the whole body, a span rather than a section. Read the note first —
 the tool requires it — and check the text it reports removing against what you meant to
