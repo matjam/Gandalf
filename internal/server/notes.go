@@ -3,8 +3,6 @@ package server
 import (
 	"context"
 	"fmt"
-	"maps"
-	"slices"
 	"strings"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -12,6 +10,11 @@ import (
 	"github.com/matjam/gandalf/internal/schema"
 	"github.com/matjam/gandalf/internal/vault"
 )
+
+// sessionCategory is the category gandalf_session_start writes to. A vault may
+// rename or retire it, in which case session notes simply are not a thing that
+// vault has.
+const sessionCategory = "session"
 
 // NoteReadInput selects a note.
 type NoteReadInput struct {
@@ -72,7 +75,7 @@ func (s *Server) sessionStart(ctx context.Context, _ *sdk.CallToolRequest, in Se
 	}
 
 	note, err := s.vault.NewNote(vault.NewNoteRequest{
-		Type:    schema.TypeSession,
+		Type:    schema.NoteType(sessionCategory),
 		Title:   in.Title,
 		Tags:    in.Tags,
 		Related: resolved.Related,
@@ -84,7 +87,7 @@ func (s *Server) sessionStart(ctx context.Context, _ *sdk.CallToolRequest, in Se
 		return nil, SessionStartOutput{}, err
 	}
 
-	ref := s.vault.Layout().RefFor(note.Path)
+	ref := s.canonical(note.Path)
 	if s.vault.Exists(note.Path) {
 		return nil, SessionStartOutput{
 			Ref:  ref.String(),
@@ -101,33 +104,34 @@ func (s *Server) sessionStart(ctx context.Context, _ *sdk.CallToolRequest, in Se
 
 // NoteNewInput describes a note to create.
 type NoteNewInput struct {
-	Kind    string   `json:"kind" jsonschema:"design, decisions, todo, standard, meeting, interview, or glossary"`
-	Title   string   `json:"title"`
-	Project string   `json:"project,omitempty" jsonschema:"required for design, decisions, and todo notes"`
-	Content string   `json:"content,omitempty" jsonschema:"body prose; a template is used when omitted"`
+	Kind  string `json:"kind" jsonschema:"the category to file this note under; see gandalf_category_list"`
+	Title string `json:"title"`
+
+	Scope string `json:"scope,omitempty" jsonschema:"required for scoped categories, such as the project name"`
+	Facet string `json:"facet,omitempty" jsonschema:"required for scoped categories, such as design or decisions"`
+
+	Content string   `json:"content,omitempty" jsonschema:"body prose; the category's template is used when omitted"`
 	Tags    []string `json:"tags,omitempty" jsonschema:"lowercase hyphenated tags"`
 	Related []string `json:"related,omitempty" jsonschema:"refs of related notes"`
 	Status  string   `json:"status,omitempty" jsonschema:"in-progress, complete, or superseded"`
 }
 
-// noteKinds maps the kinds a model may create to their note type. Sessions are
-// absent deliberately: they are created by gandalf_session_start, which sets
-// the authorship and status the memory protocol expects.
-var noteKinds = map[string]schema.NoteType{
-	"design":    schema.TypeDesign,
-	"decisions": schema.TypeDecisions,
-	"todo":      schema.TypeTodo,
-	"standard":  schema.TypeStandard,
-	"meeting":   schema.TypeMeeting,
-	"interview": schema.TypeInterview,
-	"glossary":  schema.TypeGlossary,
-}
-
-// noteNew creates a note, filing it by kind.
+// noteNew creates a note, filing it by its category.
+//
+// Sessions are excluded deliberately: gandalf_session_start creates those,
+// setting the authorship and status the memory protocol expects.
 func (s *Server) noteNew(ctx context.Context, _ *sdk.CallToolRequest, in NoteNewInput) (*sdk.CallToolResult, NoteOutput, error) {
-	noteType, ok := noteKinds[strings.TrimSpace(in.Kind)]
-	if !ok {
-		return nil, NoteOutput{}, fmt.Errorf("unknown kind %q (want one of %s)", in.Kind, kindList())
+	kind := strings.TrimSpace(in.Kind)
+
+	cat, ok := s.vault.Categories().Lookup(kind)
+	switch {
+	case !ok:
+		return nil, NoteOutput{}, fmt.Errorf("unknown category %q (want one of %s)",
+			in.Kind, strings.Join(s.vault.Categories().CreatableNames(), ", "))
+	case !cat.Creatable():
+		return nil, NoteOutput{}, fmt.Errorf("category %q cannot be created through the tools", in.Kind)
+	case cat.Name == sessionCategory:
+		return nil, NoteOutput{}, fmt.Errorf("use gandalf_session_start to open a session note")
 	}
 
 	resolved := s.resolveLinks(in.Related, in.Content)
@@ -136,9 +140,10 @@ func (s *Server) noteNew(ctx context.Context, _ *sdk.CallToolRequest, in NoteNew
 	}
 
 	note, err := s.vault.NewNote(vault.NewNoteRequest{
-		Type:    noteType,
+		Type:    schema.NoteType(cat.Name),
 		Title:   in.Title,
-		Scope:   in.Project,
+		Scope:   in.Scope,
+		Name:    in.Facet,
 		Tags:    in.Tags,
 		Related: resolved.Related,
 		Author:  schema.AuthorAgent,
@@ -151,7 +156,7 @@ func (s *Server) noteNew(ctx context.Context, _ *sdk.CallToolRequest, in NoteNew
 	}
 
 	if s.vault.Exists(note.Path) {
-		ref := s.vault.Layout().RefFor(note.Path)
+		ref := s.canonical(note.Path)
 		return nil, NoteOutput{}, fmt.Errorf(
 			"%s already exists; append to it with gandalf_note_append instead of replacing it", ref)
 	}
@@ -302,9 +307,4 @@ func remove(existing, values []string) []string {
 		}
 	}
 	return kept
-}
-
-// kindList renders the creatable kinds for an error message, in a fixed order.
-func kindList() string {
-	return strings.Join(slices.Sorted(maps.Keys(noteKinds)), ", ")
 }

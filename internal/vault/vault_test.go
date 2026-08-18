@@ -6,8 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/matjam/gandalf/internal/schema"
 )
 
 // write puts raw content at a vault-relative path, bypassing the note API so
@@ -49,7 +47,7 @@ func TestWriteThenRead(t *testing.T) {
 	v := newVault(t)
 
 	n, err := v.NewNote(NewNoteRequest{
-		Type:  schema.TypeSession,
+		Type:  typeSession,
 		Title: "Round Trip",
 		Tags:  []string{"test"},
 		On:    mustDate(t, "2026-08-17"),
@@ -146,7 +144,7 @@ func TestList(t *testing.T) {
 func TestWriteIsAtomic(t *testing.T) {
 	v := newVault(t)
 
-	n, err := v.NewNote(NewNoteRequest{Type: schema.TypeGlossary, Title: "Glossary", Tags: []string{"glossary"}})
+	n, err := v.NewNote(NewNoteRequest{Type: typeGlossary, Title: "Glossary", Tags: []string{"glossary"}})
 	if err != nil {
 		t.Fatalf("NewNote: %v", err)
 	}

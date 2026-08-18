@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/matjam/gandalf/internal/category"
 	"github.com/matjam/gandalf/internal/schema"
 )
 
@@ -22,7 +23,7 @@ func TestNewNote(t *testing.T) {
 	on := mustDate(t, "2026-08-17")
 
 	n, err := v.NewNote(NewNoteRequest{
-		Type:    schema.TypeSession,
+		Type:    typeSession,
 		Title:   "Memory Toolset Design",
 		Tags:    []string{"agent", "memory"},
 		Related: []string{"[[Agent/OS/Memory]]", "Standards/privacy"},
@@ -58,7 +59,7 @@ func TestNewNoteDefaults(t *testing.T) {
 	v := newVault(t)
 
 	n, err := v.NewNote(NewNoteRequest{
-		Type:  schema.TypeStandard,
+		Type:  typeStandard,
 		Title: "Language Go",
 	})
 	if err != nil {
@@ -104,7 +105,7 @@ func TestNewNoteBodyHandling(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			n, err := v.NewNote(NewNoteRequest{
-				Type:  schema.TypeStandard,
+				Type:  typeStandard,
 				Title: "Custom",
 				Body:  tc.body,
 			})
@@ -125,7 +126,7 @@ func TestNewNoteExplicitPathBypassesRouting(t *testing.T) {
 	v := newVault(t)
 
 	n, err := v.NewNote(NewNoteRequest{
-		Type:  schema.TypeDesign,
+		Type:  typeProject,
 		Title: "Design",
 		Path:  "somewhere/else/Design.md",
 	})
@@ -145,12 +146,12 @@ func TestNewNoteRejects(t *testing.T) {
 		req  NewNoteRequest
 	}{
 		{name: "unknown type", req: NewNoteRequest{Type: "diary", Title: "x"}},
-		{name: "missing title", req: NewNoteRequest{Type: schema.TypeSession}},
-		{name: "blank title", req: NewNoteRequest{Type: schema.TypeSession, Title: "   "}},
-		{name: "unknown author", req: NewNoteRequest{Type: schema.TypeSession, Title: "x", Author: "robot"}},
-		{name: "unknown status", req: NewNoteRequest{Type: schema.TypeSession, Title: "x", Status: "wip"}},
-		{name: "project note without scope", req: NewNoteRequest{Type: schema.TypeDesign, Title: "x"}},
-		{name: "title with no slug characters", req: NewNoteRequest{Type: schema.TypeSession, Title: "!!!"}},
+		{name: "missing title", req: NewNoteRequest{Type: typeSession}},
+		{name: "blank title", req: NewNoteRequest{Type: typeSession, Title: "   "}},
+		{name: "unknown author", req: NewNoteRequest{Type: typeSession, Title: "x", Author: "robot"}},
+		{name: "unknown status", req: NewNoteRequest{Type: typeSession, Title: "x", Status: "wip"}},
+		{name: "project note without scope", req: NewNoteRequest{Type: typeProject, Title: "x"}},
+		{name: "title with no slug characters", req: NewNoteRequest{Type: typeSession, Title: "!!!"}},
 	}
 
 	for _, tc := range tests {
@@ -162,20 +163,25 @@ func TestNewNoteRejects(t *testing.T) {
 	}
 }
 
-func TestEveryTypeProducesAValidNote(t *testing.T) {
+// TestEveryCategoryProducesAValidNote walks whatever categories the vault
+// declares, so adding one cannot quietly ship a template that fails the schema
+// it is supposed to satisfy.
+func TestEveryCategoryProducesAValidNote(t *testing.T) {
 	v := newVault(t)
 
-	for _, ty := range schema.NoteTypes() {
-		t.Run(string(ty), func(t *testing.T) {
+	for _, cat := range v.Categories().Categories {
+		t.Run(cat.Name, func(t *testing.T) {
 			req := NewNoteRequest{
-				Type:  ty,
+				Type:  schema.NoteType(cat.Name),
 				Title: "Example Note",
 				Scope: "example",
 				Tags:  []string{"example"},
 			}
-			// A README is filed by the folder it documents, so the layout
-			// cannot route it.
-			if ty == schema.TypeReadme {
+			switch cat.Rule {
+			case category.RuleScoped:
+				req.Name = cat.FacetNames()[0]
+			case category.RuleExplicit:
+				// Filed by the folder it documents, which no rule can derive.
 				req.Path = "example/README.md"
 			}
 

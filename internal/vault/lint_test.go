@@ -21,8 +21,8 @@ func TestLintCleanVault(t *testing.T) {
 	v := newVault(t)
 
 	for _, req := range []NewNoteRequest{
-		{Type: schema.TypeStandard, Title: "Privacy", Tags: []string{"standards"}},
-		{Type: schema.TypeSession, Title: "First Session", Tags: []string{"session"},
+		{Type: typeStandard, Title: "Privacy", Tags: []string{"standards"}},
+		{Type: typeSession, Title: "First Session", Tags: []string{"session"},
 			Related: []string{"Standards/privacy"}, On: mustDate(t, "2026-08-17")},
 	} {
 		n, err := v.NewNote(req)
@@ -98,7 +98,7 @@ Prose referencing [[Missing/Note]] and [[Standards/privacy]].
 	}
 
 	tests := []struct{ path, want string }{
-		{path: "bad-metadata.md", want: `unknown note type "diary"`},
+		{path: "bad-metadata.md", want: `unknown category "diary"`},
 		{path: "bad-metadata.md", want: `unknown author "robot"`},
 		{path: "bad-metadata.md", want: "not lowercase-hyphenated"},
 		{path: "bad-metadata.md", want: `"Standards/nonexistent" does not exist`},

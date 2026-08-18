@@ -18,6 +18,10 @@ import (
 	"github.com/matjam/gandalf/internal/vault"
 )
 
+// KindTopic addresses a document Gandalf ships rather than a note the vault
+// filed. It is reserved: a category may not take the name.
+const KindTopic = "topic"
+
 // Server exposes one vault.
 type Server struct {
 	vault *vault.Vault
@@ -119,7 +123,18 @@ func (s *Server) Run(ctx context.Context) error {
 // Topics are resolved here rather than in the vault package: their paths come
 // from the shipped manifest, which the vault deliberately knows nothing about.
 func (s *Server) resolve(raw string) (vault.Ref, string, error) {
-	ref, err := vault.ParseRef(raw)
+	// Topics are addressed by a reserved kind rather than a category: they are
+	// documents Gandalf ships, and their homes come from its manifest rather
+	// than from the vault's filing rules.
+	if id, ok := strings.CutPrefix(strings.TrimSpace(raw), KindTopic+":"); ok {
+		doc, found := instructions.Lookup(id)
+		if !found {
+			return vault.Ref{}, "", fmt.Errorf("ref %q: no such topic", raw)
+		}
+		return s.canonical(doc.Path), doc.Path, nil
+	}
+
+	ref, err := s.vault.ParseRef(raw)
 	if err != nil {
 		// A path is the one wrong answer worth answering properly: the vault
 		// can work out which note was meant, so say so rather than leaving the
@@ -128,14 +143,6 @@ func (s *Server) resolve(raw string) (vault.Ref, string, error) {
 			return vault.Ref{}, "", fmt.Errorf("%w. That note is addressed as %s", err, suggestion)
 		}
 		return vault.Ref{}, "", err
-	}
-
-	if ref.Kind == vault.KindTopic {
-		doc, ok := instructions.Lookup(ref.Name)
-		if !ok {
-			return vault.Ref{}, "", fmt.Errorf("ref %q: no such topic", raw)
-		}
-		return s.canonical(doc.Path), doc.Path, nil
 	}
 
 	path, err := s.vault.Resolve(ref)
@@ -172,17 +179,17 @@ func (s *Server) suggest(raw string) (vault.Ref, bool) {
 // one per note matters — two names for the same note would have boot and lint
 // disagreeing about what to call it.
 func (s *Server) canonical(notePath string) vault.Ref {
-	if ref := s.vault.Layout().RefFor(notePath); ref.Kind != vault.KindPath {
+	if ref := s.vault.RefFor(notePath); ref.Kind != vault.KindPath {
 		return ref
 	}
 
 	for _, doc := range instructions.Docs() {
 		if doc.Path == notePath {
-			return vault.Ref{Kind: vault.KindTopic, Name: doc.ID}
+			return vault.Ref{Kind: KindTopic, Name: doc.ID}
 		}
 	}
 
-	return s.vault.Layout().RefFor(notePath)
+	return s.vault.RefFor(notePath)
 }
 
 // writable resolves a ref and refuses the read-only kinds.

@@ -30,7 +30,7 @@ func TestParseNote(t *testing.T) {
 		t.Fatalf("ParseNote: %v", err)
 	}
 
-	if n.FM.Type != schema.TypeSession {
+	if n.FM.Type != typeSession {
 		t.Errorf("type = %q, want session", n.FM.Type)
 	}
 	if n.FM.Created.String() != "2026-08-17" {
@@ -121,7 +121,7 @@ func TestParseNoteTolerantOfEncoding(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseNote with BOM and CRLF: %v", err)
 	}
-	if n.FM.Type != schema.TypeSession {
+	if n.FM.Type != typeSession {
 		t.Errorf("type = %q, want session", n.FM.Type)
 	}
 	if strings.Contains(n.Body, "\r") {
@@ -180,7 +180,7 @@ func TestRenderQuotesAmbiguousScalars(t *testing.T) {
 	n := &Note{
 		Path: "note.md",
 		FM: schema.Frontmatter{
-			Type:    schema.TypeSession,
+			Type:    typeSession,
 			Created: mustDate(t, "2026-08-17"),
 			Updated: mustDate(t, "2026-08-17"),
 			Tags:    []string{"no", "2026", "plain"},
@@ -202,7 +202,7 @@ func TestRenderEmptyCollections(t *testing.T) {
 	n := &Note{
 		Path: "note.md",
 		FM: schema.Frontmatter{
-			Type:    schema.TypeGlossary,
+			Type:    typeGlossary,
 			Created: mustDate(t, "2026-08-17"),
 			Updated: mustDate(t, "2026-08-17"),
 			Author:  schema.AuthorAgent,
@@ -227,6 +227,17 @@ func TestTitleIgnoresDeeperHeadings(t *testing.T) {
 		t.Errorf("title = %q, want empty", got)
 	}
 }
+
+// Categories are vault data now, so tests name them as the strings they are
+// rather than reaching for constants that no longer exist.
+const (
+	typeSession  = schema.NoteType("session")
+	typeStandard = schema.NoteType("standard")
+	typeGlossary = schema.NoteType("glossary")
+	typeProject  = schema.NoteType("project")
+	typeMeeting  = schema.NoteType("meeting")
+	typeReadme   = schema.NoteType("readme")
+)
 
 func mustDate(t *testing.T, s string) schema.Date {
 	t.Helper()

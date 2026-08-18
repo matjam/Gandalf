@@ -59,7 +59,7 @@ func (v *Vault) Lint(paths ...string) ([]Finding, error) {
 			})
 			continue
 		}
-		findings = append(findings, lintNote(note, index)...)
+		findings = append(findings, v.lintNote(note, index)...)
 	}
 
 	sort.SliceStable(findings, func(i, j int) bool {
@@ -83,7 +83,7 @@ func HasErrors(findings []Finding) bool {
 }
 
 // lintNote runs every check that applies to a single note.
-func lintNote(n *Note, index *noteIndex) []Finding {
+func (v *Vault) lintNote(n *Note, index *noteIndex) []Finding {
 	var findings []Finding
 
 	at := func(issue schema.Issue, line int) {
@@ -101,6 +101,19 @@ func lintNote(n *Note, index *noteIndex) []Finding {
 	}
 	for _, issue := range n.FM.Validate() {
 		at(issue, 0)
+	}
+
+	// Whether a type names a declared category is a vault-level fact, so the
+	// schema leaves it alone and it is checked here.
+	if t := string(n.FM.Type); t != "" {
+		if _, ok := v.categories.Lookup(t); !ok {
+			at(schema.Issue{
+				Field:    "type",
+				Severity: schema.SeverityError,
+				Message: fmt.Sprintf("unknown category %q (this vault declares %s)",
+					t, strings.Join(v.categories.Names(), ", ")),
+			}, 0)
+		}
 	}
 
 	if n.Title() == "" {

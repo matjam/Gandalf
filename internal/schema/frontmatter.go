@@ -59,11 +59,10 @@ func (f Frontmatter) Validate() []Issue {
 		})
 	}
 
-	switch {
-	case f.Type == "":
+	// Whether the type names a category this vault declares is a question only
+	// the vault can answer, and lint asks it there.
+	if f.Type == "" {
 		add("type", SeverityError, "required")
-	case !f.Type.Valid():
-		add("type", SeverityError, "unknown note type %q (want one of %s)", f.Type, list(NoteTypes()))
 	}
 
 	if f.Created.IsZero() {

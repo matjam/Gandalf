@@ -3,6 +3,7 @@ package instructions
 import (
 	"fmt"
 
+	"github.com/matjam/gandalf/internal/category"
 	"github.com/matjam/gandalf/internal/schema"
 	"github.com/matjam/gandalf/internal/vault"
 )
@@ -36,6 +37,15 @@ const (
 func Seed(v *vault.Vault, on schema.Date, restore bool) ([]SeedResult, error) {
 	if on.IsZero() {
 		on = schema.Today()
+	}
+
+	// Write the categories out on first use. Loading falls back to the
+	// defaults in memory, but a file nobody can see is not something a user
+	// can edit, and editing it is the whole point of categories being data.
+	if !category.Exists(v.Root()) {
+		if err := v.SetCategories(v.Categories()); err != nil {
+			return nil, err
+		}
 	}
 
 	ledger, err := LoadLedger(v)

@@ -67,11 +67,14 @@ func TestPathsAreRejectedWithGuidance(t *testing.T) {
 	}
 }
 
+// TestUnknownKindListsTheValidOnes checks the error names the categories this
+// vault declares, rather than a list baked into the binary that a customised
+// vault would have moved on from.
 func TestUnknownKindListsTheValidOnes(t *testing.T) {
 	h := newHarness(t)
 
 	msg := h.callErr("gandalf_note_read", NoteReadInput{Ref: "diary:today"})
-	for _, want := range []string{"unknown kind", "session", "project", "standard", "topic"} {
+	for _, want := range []string{"unknown category", "session", "project", "standard"} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("message does not mention %q: %q", want, msg)
 		}

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/matjam/gandalf/internal/schema"
+	"github.com/matjam/gandalf/internal/category"
 )
 
 // TestManifestIntegrity checks the shipped set is internally consistent. These
@@ -35,8 +35,11 @@ func TestManifestIntegrity(t *testing.T) {
 			}
 			sources[doc.Source] = true
 
-			if !doc.Type.Valid() {
-				t.Errorf("invalid note type %q", doc.Type)
+			// A shipped document must be filed under a category the defaults
+			// declare, or seeding a fresh vault would produce notes its own
+			// linter rejects.
+			if _, ok := category.Defaults().Lookup(string(doc.Type)); !ok {
+				t.Errorf("type %q is not a default category", doc.Type)
 			}
 			if doc.Title == "" {
 				t.Error("empty title")
@@ -148,7 +151,7 @@ func TestCoreDocumentsAreReachable(t *testing.T) {
 	}
 
 	for _, d := range core {
-		if d.Type != schema.TypeStandard {
+		if d.Type != typeStandard {
 			t.Errorf("core document %q has type %q", d.ID, d.Type)
 		}
 	}

@@ -10,13 +10,14 @@ import (
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/matjam/gandalf/internal/category"
 	"github.com/matjam/gandalf/internal/instructions"
 	"github.com/matjam/gandalf/internal/vault"
 )
 
 // ListInput selects what to enumerate.
 type ListInput struct {
-	Kind string `json:"kind" jsonschema:"sessions, projects, standards, topics, meetings, interviews, or all"`
+	Kind string `json:"kind" jsonschema:"what to list; the categories this vault declares, plus topics and all"`
 
 	Project string `json:"project,omitempty" jsonschema:"restrict to one project"`
 
@@ -58,13 +59,17 @@ type ListOutput struct {
 // information rather than hiding it.
 const defaultLimit = 20
 
-// listKinds maps the plural names a caller asks for to the ref kind they
-// enumerate. Plural reads as "the list of these", which is what it is.
-var listKinds = map[string]vault.Kind{
-	"sessions":   vault.KindSession,
-	"standards":  vault.KindStandard,
-	"meetings":   vault.KindMeeting,
-	"interviews": vault.KindInterview,
+// listNames returns everything gandalf_list accepts for this vault: each
+// category's plural, plus the two listings that are not categories.
+func (s *Server) listNames() []string {
+	out := []string{"all", "topics"}
+	for _, c := range s.vault.Categories().Categories {
+		if !c.Retired {
+			out = append(out, c.Plural)
+		}
+	}
+	slices.Sort(out)
+	return out
 }
 
 // list enumerates the vault without returning any note's content.
@@ -93,15 +98,6 @@ func (s *Server) list(ctx context.Context, _ *sdk.CallToolRequest, in ListInput)
 		out.Total = len(out.Topics)
 		return nil, out, nil
 
-	case "projects":
-		projects, err := s.projects(in.Project)
-		if err != nil {
-			return nil, ListOutput{}, err
-		}
-		out.Projects = projects
-		out.Total = len(projects)
-		return nil, out, nil
-
 	case "all":
 		notes, err := s.summaries(nil, in.Project)
 		if err != nil {
@@ -110,23 +106,34 @@ func (s *Server) list(ctx context.Context, _ *sdk.CallToolRequest, in ListInput)
 		out.Total = len(notes)
 		out.Notes, out.Truncated = truncate(notes, limit)
 		return nil, out, nil
+	}
 
-	default:
-		refKind, ok := listKinds[kind]
-		if !ok {
-			return nil, ListOutput{}, fmt.Errorf(
-				"unknown kind %q (want %s, projects, topics, or all)",
-				in.Kind, strings.Join(slices.Sorted(maps.Keys(listKinds)), ", "))
-		}
+	cat, ok := s.vault.Categories().ByPlural(kind)
+	if !ok {
+		return nil, ListOutput{}, fmt.Errorf("unknown kind %q (want one of %s)",
+			in.Kind, strings.Join(s.listNames(), ", "))
+	}
 
-		notes, err := s.summaries(&refKind, in.Project)
+	// A scoped category is summarised by scope rather than by note: what a
+	// caller wants from "projects" is which projects exist, not three rows per
+	// project.
+	if cat.Rule == category.RuleScoped {
+		groups, err := s.scopes(cat, in.Project)
 		if err != nil {
 			return nil, ListOutput{}, err
 		}
-		out.Total = len(notes)
-		out.Notes, out.Truncated = truncate(notes, limit)
+		out.Projects = groups
+		out.Total = len(groups)
 		return nil, out, nil
 	}
+
+	notes, err := s.summaries(&cat.Name, in.Project)
+	if err != nil {
+		return nil, ListOutput{}, err
+	}
+	out.Total = len(notes)
+	out.Notes, out.Truncated = truncate(notes, limit)
+	return nil, out, nil
 }
 
 // summaries collects every note of a kind, or of any kind when kind is nil.
@@ -134,7 +141,7 @@ func (s *Server) list(ctx context.Context, _ *sdk.CallToolRequest, in ListInput)
 // Dated notes come back newest first, since recent work is what a caller is
 // nearly always after; everything else is ordered by ref so the listing is
 // stable between runs.
-func (s *Server) summaries(kind *vault.Kind, project string) ([]Summary, error) {
+func (s *Server) summaries(kind *string, project string) ([]Summary, error) {
 	paths, err := s.vault.List()
 	if err != nil {
 		return nil, err
@@ -171,7 +178,7 @@ func (s *Server) summaries(kind *vault.Kind, project string) ([]Summary, error) 
 	}
 
 	sort.SliceStable(out, func(i, j int) bool {
-		if dated(out[i].Ref) && dated(out[j].Ref) {
+		if s.dated(out[i].Ref) && s.dated(out[j].Ref) {
 			return out[i].Ref > out[j].Ref
 		}
 		return out[i].Ref < out[j].Ref
@@ -180,8 +187,8 @@ func (s *Server) summaries(kind *vault.Kind, project string) ([]Summary, error) 
 	return out, nil
 }
 
-// projects lists the projects in the vault and which notes each one has.
-func (s *Server) projects(only string) ([]ProjectSummary, error) {
+// scopes lists the groups a scoped category holds, and the notes in each.
+func (s *Server) scopes(cat category.Category, only string) ([]ProjectSummary, error) {
 	paths, err := s.vault.List()
 	if err != nil {
 		return nil, err
@@ -190,7 +197,7 @@ func (s *Server) projects(only string) ([]ProjectSummary, error) {
 	byName := map[string][]string{}
 	for _, path := range paths {
 		ref := s.canonical(path)
-		if ref.Kind != vault.KindProject {
+		if ref.Kind != cat.Name {
 			continue
 		}
 		if only != "" && !strings.EqualFold(ref.Scope, only) {
@@ -209,15 +216,15 @@ func (s *Server) projects(only string) ([]ProjectSummary, error) {
 	return out, nil
 }
 
-// dated reports whether a ref's name begins with a date, and so sorts
-// chronologically.
-func dated(ref string) bool {
-	for _, prefix := range []vault.Kind{vault.KindSession, vault.KindMeeting, vault.KindInterview} {
-		if strings.HasPrefix(ref, string(prefix)+":") {
-			return true
-		}
+// dated reports whether a ref addresses a category filed by date, and so sorts
+// chronologically rather than alphabetically.
+func (s *Server) dated(ref string) bool {
+	kind, _, ok := strings.Cut(ref, ":")
+	if !ok {
+		return false
 	}
-	return false
+	cat, ok := s.vault.Categories().Lookup(kind)
+	return ok && cat.Rule == category.RuleDated
 }
 
 // truncate applies the limit, reporting whether anything was cut.

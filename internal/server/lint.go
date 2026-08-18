@@ -48,12 +48,11 @@ func (s *Server) lint(ctx context.Context, _ *sdk.CallToolRequest, in LintInput)
 		return nil, LintOutput{}, err
 	}
 
-	layout := s.vault.Layout()
 	out := LintOutput{Findings: make([]Finding, 0, len(findings))}
 
 	for _, f := range findings {
 		out.Findings = append(out.Findings, Finding{
-			Ref:      layout.RefFor(f.Path).String(),
+			Ref:      s.canonical(f.Path).String(),
 			Line:     f.Line,
 			Field:    f.Field,
 			Severity: string(f.Severity),

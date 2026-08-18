@@ -11,10 +11,10 @@ func populate(t *testing.T, h *harness) {
 	t.Helper()
 
 	for _, in := range []NoteNewInput{
-		{Kind: "design", Title: "Blitter", Project: "blitter", Tags: []string{"design"}},
-		{Kind: "decisions", Title: "Blitter", Project: "blitter", Tags: []string{"decisions"}},
-		{Kind: "todo", Title: "Blitter", Project: "blitter", Tags: []string{"todo"}},
-		{Kind: "design", Title: "Egg", Project: "egg", Tags: []string{"design"}},
+		{Kind: "project", Facet: "design", Title: "Blitter", Scope: "blitter", Tags: []string{"design"}},
+		{Kind: "project", Facet: "decisions", Title: "Blitter", Scope: "blitter", Tags: []string{"decisions"}},
+		{Kind: "project", Facet: "todo", Title: "Blitter", Scope: "blitter", Tags: []string{"todo"}},
+		{Kind: "project", Facet: "design", Title: "Egg", Scope: "egg", Tags: []string{"design"}},
 		{Kind: "standard", Title: "Language Rust", Tags: []string{"standards"}},
 		{Kind: "meeting", Title: "Planning", Tags: []string{"meeting"}},
 	} {

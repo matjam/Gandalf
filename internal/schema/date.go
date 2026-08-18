@@ -32,6 +32,9 @@ func ParseDate(s string) (Date, error) {
 	return Date{t}, nil
 }
 
+// Time returns the date as a time, at midnight UTC.
+func (d Date) Time() time.Time { return d.t }
+
 // IsZero reports whether the date is unset.
 func (d Date) IsZero() bool { return d.t.IsZero() }
 

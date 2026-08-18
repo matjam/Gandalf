@@ -79,10 +79,21 @@ func (s *Server) resolveLinks(related []string, body string) links {
 	return out
 }
 
+// isRef reports whether a wikilink target is a ref rather than a path or
+// ordinary prose. Topics count: they are addressable even though no category
+// declares them.
+func (s *Server) isRef(target string) bool {
+	if strings.HasPrefix(strings.TrimSpace(target), KindTopic+":") {
+		return true
+	}
+	_, err := s.vault.ParseRef(target)
+	return err == nil
+}
+
 // linkPath returns the vault path a ref addresses, without its extension, and
 // whether that note exists. An empty path means the target was not a ref.
 func (s *Server) linkPath(raw string) (string, bool) {
-	if _, err := vault.ParseRef(raw); err != nil {
+	if !s.isRef(raw) {
 		return "", false
 	}
 
@@ -100,7 +111,7 @@ func (s *Server) linkPath(raw string) (string, bool) {
 // gets links it can pass straight back to these tools.
 func (s *Server) toRefs(text string) string {
 	return vault.RewriteWikilinks(text, func(target string) string {
-		if _, err := vault.ParseRef(target); err == nil {
+		if s.isRef(target) {
 			return ""
 		}
 

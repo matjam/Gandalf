@@ -9,7 +9,6 @@ import (
 
 	"github.com/matjam/gandalf/internal/instructions"
 	"github.com/matjam/gandalf/internal/schema"
-	"github.com/matjam/gandalf/internal/vault"
 )
 
 // BootInput is empty: boot takes no arguments and is safe to call again.
@@ -122,8 +121,10 @@ func (s *Server) topic(ctx context.Context, _ *sdk.CallToolRequest, in TopicInpu
 	// table of them, and refusing "shipping" for want of a prefix would be
 	// pedantry rather than a safeguard.
 	id := strings.TrimSpace(in.Ref)
-	for _, prefix := range []vault.Kind{vault.KindTopic, vault.KindStandard} {
-		id = strings.TrimPrefix(id, string(prefix)+":")
+	if kind, name, ok := strings.Cut(id, ":"); ok {
+		if _, isCategory := s.vault.Categories().Lookup(kind); isCategory || kind == KindTopic {
+			id = name
+		}
 	}
 
 	doc, ok := instructions.Lookup(id)
@@ -171,13 +172,12 @@ func (s *Server) openSessions(on schema.Date) ([]OpenSession, error) {
 		return nil, err
 	}
 
-	layout := s.vault.Layout()
 	prefix := on.String()
 
 	var open []OpenSession
 	for _, p := range paths {
-		ref := layout.RefFor(p)
-		if ref.Kind != vault.KindSession || !strings.HasPrefix(ref.Name, prefix) {
+		ref := s.vault.RefFor(p)
+		if ref.Kind != sessionCategory || !strings.HasPrefix(ref.Name, prefix) {
 			continue
 		}
 

@@ -1,56 +1,61 @@
 package vault
 
 import (
+	"strings"
 	"testing"
 
-	"github.com/matjam/gandalf/internal/schema"
+	"github.com/matjam/gandalf/internal/category"
 )
 
 func TestParseRef(t *testing.T) {
+	v := newVault(t)
+
 	tests := []struct {
 		name    string
 		in      string
 		want    Ref
-		wantErr bool
+		wantErr string
 	}{
 		{name: "session", in: "session:2026-08-17-memory-toolset",
-			want: Ref{Kind: KindSession, Name: "2026-08-17-memory-toolset"}},
+			want: Ref{Kind: "session", Name: "2026-08-17-memory-toolset"}},
 		{name: "meeting", in: "meeting:2026-08-17-planning",
-			want: Ref{Kind: KindMeeting, Name: "2026-08-17-planning"}},
+			want: Ref{Kind: "meeting", Name: "2026-08-17-planning"}},
 		{name: "project design", in: "project:gandalf:design",
-			want: Ref{Kind: KindProject, Scope: "gandalf", Name: "design"}},
+			want: Ref{Kind: "project", Scope: "gandalf", Name: "design"}},
 		{name: "project todo", in: "project:gandalf:todo",
-			want: Ref{Kind: KindProject, Scope: "gandalf", Name: "todo"}},
+			want: Ref{Kind: "project", Scope: "gandalf", Name: "todo"}},
 		{name: "standard", in: "standard:language-go",
-			want: Ref{Kind: KindStandard, Name: "language-go"}},
-		{name: "topic", in: "topic:shipping",
-			want: Ref{Kind: KindTopic, Name: "shipping"}},
+			want: Ref{Kind: "standard", Name: "language-go"}},
 		{name: "glossary", in: "glossary",
-			want: Ref{Kind: KindGlossary}},
+			want: Ref{Kind: "glossary"}},
 		{name: "path with spaces", in: "path:Dads Eulogy/On Dad",
 			want: Ref{Kind: KindPath, Name: "Dads Eulogy/On Dad"}},
 		{name: "surrounding space is ignored", in: "  standard:language-go  ",
-			want: Ref{Kind: KindStandard, Name: "language-go"}},
+			want: Ref{Kind: "standard", Name: "language-go"}},
 		{name: "latest is parsed, resolved later", in: "session:latest",
-			want: Ref{Kind: KindSession, Name: Latest}},
+			want: Ref{Kind: "session", Name: Latest}},
 
-		{name: "unknown kind", in: "diary:today", wantErr: true},
-		{name: "empty", in: "", wantErr: true},
-		{name: "session without a name", in: "session", wantErr: true},
-		{name: "session with an empty name", in: "session:", wantErr: true},
-		{name: "glossary with a name", in: "glossary:terms", wantErr: true},
-		{name: "project without a facet", in: "project:gandalf", wantErr: true},
-		{name: "project with an unknown facet", in: "project:gandalf:roadmap", wantErr: true},
-		{name: "project with an empty scope", in: "project::design", wantErr: true},
-		{name: "path without a path", in: "path:", wantErr: true},
+		{name: "unknown category", in: "diary:today", wantErr: "unknown category"},
+		{name: "empty", in: "", wantErr: "required"},
+		{name: "session without a name", in: "session", wantErr: "want session:<name>"},
+		{name: "session with an empty name", in: "session:", wantErr: "want session:<name>"},
+		{name: "glossary with a name", in: "glossary:terms", wantErr: "no further fields"},
+		{name: "project without a facet", in: "project:gandalf", wantErr: "want project:<scope>"},
+		{name: "project with an unknown facet", in: "project:gandalf:roadmap", wantErr: `no "roadmap"`},
+		{name: "project with an empty scope", in: "project::design", wantErr: "want project:<scope>"},
+		{name: "path without a path", in: "path:", wantErr: "want path:"},
+		{name: "a readme is filed explicitly", in: "readme:root", wantErr: "filed explicitly"},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := ParseRef(tc.in)
-			if tc.wantErr {
+			got, err := v.ParseRef(tc.in)
+			if tc.wantErr != "" {
 				if err == nil {
 					t.Fatalf("ParseRef(%q) = %+v, want error", tc.in, got)
+				}
+				if !strings.Contains(err.Error(), tc.wantErr) {
+					t.Errorf("error = %q, want it to mention %q", err, tc.wantErr)
 				}
 				return
 			}
@@ -65,16 +70,17 @@ func TestParseRef(t *testing.T) {
 }
 
 func TestRefRoundTrip(t *testing.T) {
+	v := newVault(t)
+
 	for _, in := range []string{
 		"session:2026-08-17-memory-toolset",
 		"project:gandalf:decisions",
 		"standard:language-go",
-		"topic:shipping",
 		"glossary",
 		"path:Dads Eulogy/On Dad",
 	} {
 		t.Run(in, func(t *testing.T) {
-			ref, err := ParseRef(in)
+			ref, err := v.ParseRef(in)
 			if err != nil {
 				t.Fatalf("ParseRef: %v", err)
 			}
@@ -86,7 +92,7 @@ func TestRefRoundTrip(t *testing.T) {
 }
 
 func TestResolve(t *testing.T) {
-	l := DefaultLayout()
+	v := newVault(t)
 
 	tests := []struct {
 		ref     string
@@ -95,7 +101,6 @@ func TestResolve(t *testing.T) {
 	}{
 		{ref: "session:2026-08-17-memory-toolset", want: "Sessions/2026/08/2026-08-17-memory-toolset.md"},
 		{ref: "meeting:2026-01-05-standup", want: "Meetings/2026/01/2026-01-05-standup.md"},
-		{ref: "interview:2026-08-17-candidate", want: "Interviews/2026/08/2026-08-17-candidate.md"},
 		{ref: "project:gandalf:design", want: "Projects/gandalf/Design.md"},
 		{ref: "project:gandalf:decisions", want: "Projects/gandalf/Decisions.md"},
 		{ref: "project:gandalf:todo", want: "Projects/gandalf/Todo.md"},
@@ -104,19 +109,18 @@ func TestResolve(t *testing.T) {
 		{ref: "path:Dads Eulogy/On Dad", want: "Dads Eulogy/On Dad.md"},
 		{ref: "path:Dads Eulogy/On Dad.md", want: "Dads Eulogy/On Dad.md"},
 
-		{ref: "topic:shipping", wantErr: true},
 		{ref: "session:latest", wantErr: true},
 		{ref: "session:not-a-date-slug", wantErr: true},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.ref, func(t *testing.T) {
-			ref, err := ParseRef(tc.ref)
+			ref, err := v.ParseRef(tc.ref)
 			if err != nil {
 				t.Fatalf("ParseRef: %v", err)
 			}
 
-			got, err := l.Resolve(ref)
+			got, err := v.Resolve(ref)
 			if tc.wantErr {
 				if err == nil {
 					t.Fatalf("Resolve() = %q, want error", got)
@@ -133,15 +137,14 @@ func TestResolve(t *testing.T) {
 	}
 }
 
-// TestRefForInvertsResolve is the property search and lint depend on: a path
-// they report must come back as a ref that addresses the same note.
+// TestRefForInvertsResolve is the property listings and lint depend on: a path
+// they report must come back as a ref addressing the same note.
 func TestRefForInvertsResolve(t *testing.T) {
-	l := DefaultLayout()
+	v := newVault(t)
 
 	for _, in := range []string{
 		"session:2026-08-17-memory-toolset",
 		"meeting:2026-08-17-planning",
-		"interview:2026-08-17-candidate",
 		"project:gandalf:design",
 		"project:gandalf:decisions",
 		"project:gandalf:todo",
@@ -149,15 +152,15 @@ func TestRefForInvertsResolve(t *testing.T) {
 		"glossary",
 	} {
 		t.Run(in, func(t *testing.T) {
-			ref, err := ParseRef(in)
+			ref, err := v.ParseRef(in)
 			if err != nil {
 				t.Fatalf("ParseRef: %v", err)
 			}
-			notePath, err := l.Resolve(ref)
+			notePath, err := v.Resolve(ref)
 			if err != nil {
 				t.Fatalf("Resolve: %v", err)
 			}
-			if got := l.RefFor(notePath); got != ref {
+			if got := v.RefFor(notePath); got != ref {
 				t.Errorf("RefFor(%q) = %+v, want %+v", notePath, got, ref)
 			}
 		})
@@ -165,7 +168,7 @@ func TestRefForInvertsResolve(t *testing.T) {
 }
 
 func TestRefForUnconventionalPaths(t *testing.T) {
-	l := DefaultLayout()
+	v := newVault(t)
 
 	tests := []struct{ path, want string }{
 		{path: "Dads Eulogy/On Dad.md", want: "path:Dads Eulogy/On Dad"},
@@ -176,7 +179,7 @@ func TestRefForUnconventionalPaths(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.path, func(t *testing.T) {
-			got := l.RefFor(tc.path)
+			got := v.RefFor(tc.path)
 			if got.String() != tc.want {
 				t.Errorf("RefFor(%q) = %q, want %q", tc.path, got, tc.want)
 			}
@@ -187,63 +190,74 @@ func TestRefForUnconventionalPaths(t *testing.T) {
 	}
 }
 
-func TestRefWritable(t *testing.T) {
-	for _, in := range []string{"session:2026-08-17-x", "project:p:design", "standard:s", "glossary"} {
-		ref, err := ParseRef(in)
-		if err != nil {
-			t.Fatalf("ParseRef(%q): %v", in, err)
-		}
-		if !ref.Writable() {
-			t.Errorf("%q should be writable", in)
+// TestPathsAreRejectedWithGuidance checks the error teaches the scheme using
+// this vault's own categories, since examples from the shipped defaults would
+// be wrong in a vault that had changed them.
+func TestPathsAreRejectedWithGuidance(t *testing.T) {
+	v := newVault(t)
+
+	_, err := v.ParseRef("Standards/language-go.md")
+	if err == nil {
+		t.Fatal("a path was accepted as a ref")
+	}
+	for _, want := range []string{"file path", "addressed by ref", "session:"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error = %q, want it to mention %q", err, want)
 		}
 	}
 }
 
-func TestRefType(t *testing.T) {
-	tests := []struct {
-		ref  string
-		want schema.NoteType
-	}{
-		{ref: "session:2026-08-17-x", want: schema.TypeSession},
-		{ref: "meeting:2026-08-17-x", want: schema.TypeMeeting},
-		{ref: "interview:2026-08-17-x", want: schema.TypeInterview},
-		{ref: "project:p:design", want: schema.TypeDesign},
-		{ref: "project:p:decisions", want: schema.TypeDecisions},
-		{ref: "project:p:todo", want: schema.TypeTodo},
-		{ref: "standard:s", want: schema.TypeStandard},
-		{ref: "topic:shipping", want: schema.TypeStandard},
-		{ref: "glossary", want: schema.TypeGlossary},
-	}
+func TestLatest(t *testing.T) {
+	v := newVault(t)
 
-	for _, tc := range tests {
-		t.Run(tc.ref, func(t *testing.T) {
-			ref, err := ParseRef(tc.ref)
-			if err != nil {
-				t.Fatalf("ParseRef: %v", err)
-			}
-			got, err := ref.Type()
-			if err != nil {
-				t.Fatalf("Type(): %v", err)
-			}
-			if got != tc.want {
-				t.Errorf("Type() = %q, want %q", got, tc.want)
-			}
+	for _, slug := range []string{"2026-08-16-earlier", "2026-08-17-later"} {
+		n, err := v.NewNote(NewNoteRequest{
+			Type: typeSession, Title: slug, Name: slug, Tags: []string{"work"},
+			On: mustDate(t, slug[:10]),
 		})
+		if err != nil {
+			t.Fatalf("NewNote: %v", err)
+		}
+		if err := v.Write(n); err != nil {
+			t.Fatalf("Write: %v", err)
+		}
 	}
 
-	if _, err := (Ref{Kind: KindPath, Name: "x"}).Type(); err == nil {
-		t.Error("a path ref should have no note type")
+	ref, err := v.ParseRef("session:latest")
+	if err != nil {
+		t.Fatalf("ParseRef: %v", err)
+	}
+	got, err := v.Resolve(ref)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if want := "Sessions/2026/08/2026-08-17-later.md"; got != want {
+		t.Errorf("latest resolved to %q, want %q", got, want)
 	}
 }
 
-func TestLayoutDepth(t *testing.T) {
-	on, err := schema.ParseDate("2026-08-07")
+func TestLatestWithNothingToFind(t *testing.T) {
+	v := newVault(t)
+
+	ref, err := v.ParseRef("session:latest")
 	if err != nil {
-		t.Fatalf("ParseDate: %v", err)
+		t.Fatalf("ParseRef: %v", err)
+	}
+	if _, err := v.Resolve(ref); err == nil {
+		t.Error("latest resolved in an empty vault")
+	}
+}
+
+func TestDepth(t *testing.T) {
+	v := newVault(t)
+	on := mustDate(t, "2026-08-07")
+
+	cat, ok := v.Categories().Lookup("session")
+	if !ok {
+		t.Fatal("no session category")
 	}
 
-	month := DefaultLayout()
-	got, err := month.Path(schema.TypeSession, "", "work", on)
+	got, err := cat.Path("", "2026-08-07-work", on.Time(), category.DepthMonth)
 	if err != nil {
 		t.Fatalf("Path: %v", err)
 	}
@@ -251,29 +265,11 @@ func TestLayoutDepth(t *testing.T) {
 		t.Errorf("month depth = %q, want %q", got, want)
 	}
 
-	day := DefaultLayout()
-	day.SessionDepth = DepthDay
-	got, err = day.Path(schema.TypeSession, "", "work", on)
+	got, err = cat.Path("", "2026-08-07-work", on.Time(), category.DepthDay)
 	if err != nil {
 		t.Fatalf("Path: %v", err)
 	}
 	if want := "Sessions/2026/08/07/2026-08-07-work.md"; got != want {
 		t.Errorf("day depth = %q, want %q", got, want)
-	}
-
-	// Refs must still resolve under the deeper layout.
-	ref, err := ParseRef("session:2026-08-07-work")
-	if err != nil {
-		t.Fatalf("ParseRef: %v", err)
-	}
-	resolved, err := day.Resolve(ref)
-	if err != nil {
-		t.Fatalf("Resolve: %v", err)
-	}
-	if resolved != got {
-		t.Errorf("Resolve() = %q, want %q", resolved, got)
-	}
-	if back := day.RefFor(resolved); back != ref {
-		t.Errorf("RefFor(%q) = %+v, want %+v", resolved, back, ref)
 	}
 }

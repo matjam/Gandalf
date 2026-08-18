@@ -8,6 +8,8 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+
+	"github.com/matjam/gandalf/internal/category"
 )
 
 // ErrOutsideVault is returned for a path that would escape the vault root.
@@ -17,8 +19,9 @@ var ErrOutsideVault = errors.New("path is outside the vault")
 // crossing this API are vault-relative and slash-separated, which keeps the
 // tool surface identical on every platform.
 type Vault struct {
-	root   string
-	layout Layout
+	root       string
+	categories *category.Set
+	depth      category.Depth
 }
 
 // Open returns the vault rooted at dir, creating the directory if it does not
@@ -41,58 +44,32 @@ func Open(dir string) (*Vault, error) {
 		return nil, fmt.Errorf("open vault root %q: %w", abs, err)
 	}
 
-	return &Vault{root: abs, layout: DefaultLayout()}, nil
-}
-
-// Root returns the vault's absolute root directory.
-func (v *Vault) Root() string { return v.root }
-
-// Layout returns the filing conventions this vault uses.
-func (v *Vault) Layout() Layout { return v.layout }
-
-// Resolve returns the path a ref addresses, including the "latest" form, which
-// can only be answered by looking at what the vault contains.
-func (v *Vault) Resolve(r Ref) (string, error) {
-	if r.Name != Latest {
-		return v.layout.Resolve(r)
-	}
-
-	found, err := v.Latest(r.Kind)
-	if err != nil {
-		return "", err
-	}
-	return v.layout.Resolve(found)
-}
-
-// Latest returns the most recent note of a dated kind. Dated names sort
-// chronologically as text, so the last one is the newest.
-func (v *Vault) Latest(kind Kind) (Ref, error) {
-	paths, err := v.List()
-	if err != nil {
-		return Ref{}, err
-	}
-
-	var newest Ref
-	for _, p := range paths {
-		if ref := v.layout.RefFor(p); ref.Kind == kind && ref.Name > newest.Name {
-			newest = ref
-		}
-	}
-	if newest.Name == "" {
-		return Ref{}, fmt.Errorf("no %s notes in the vault", kind)
-	}
-
-	return newest, nil
-}
-
-// ReadRef parses and reads the note a ref addresses.
-func (v *Vault) ReadRef(r Ref) (*Note, error) {
-	rel, err := v.Resolve(r)
+	categories, err := category.Load(abs)
 	if err != nil {
 		return nil, err
 	}
-	return v.Read(rel)
+
+	return &Vault{root: abs, categories: categories, depth: category.DepthMonth}, nil
 }
+
+// Categories returns the categories this vault declares.
+func (v *Vault) Categories() *category.Set { return v.categories }
+
+// SetCategories replaces the vault's categories and writes them back, so the
+// declaration and what the vault does with it cannot drift apart.
+func (v *Vault) SetCategories(set *category.Set) error {
+	if err := category.Save(v.root, set); err != nil {
+		return err
+	}
+	v.categories = set
+	return nil
+}
+
+// Depth returns how deeply dated notes are nested.
+func (v *Vault) Depth() category.Depth { return v.depth }
+
+// Root returns the vault's absolute root directory.
+func (v *Vault) Root() string { return v.root }
 
 // Read parses the note at a vault-relative path.
 func (v *Vault) Read(rel string) (*Note, error) {

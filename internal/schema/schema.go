@@ -3,39 +3,20 @@
 // validation rules applied whenever a note is written or linted.
 //
 // The package is pure domain logic and never touches the filesystem. Checks
-// that need the vault as a whole — dead wikilinks, filing conventions — live
-// in package vault.
+// that need the vault as a whole — whether a note's type is a category this
+// vault declares, whether a link resolves — live in package vault.
 package schema
 
 import "slices"
 
-// NoteType identifies the kind of note. It selects the note's template and,
-// for some types, where in the vault the note is filed.
+// NoteType is the kind of note, matching the name of a category the vault
+// declares.
+//
+// It is deliberately not a closed set here. Categories are vault data, so the
+// list of valid types is a fact about a particular vault rather than about
+// Gandalf, and pinning it in this package would put the two out of step the
+// first time somebody added one.
 type NoteType string
-
-// The note types Gandalf understands.
-const (
-	TypeSession   NoteType = "session"
-	TypeDesign    NoteType = "design"
-	TypeDecisions NoteType = "decisions"
-	TypeTodo      NoteType = "todo"
-	TypeStandard  NoteType = "standard"
-	TypeGlossary  NoteType = "glossary"
-	TypeMeeting   NoteType = "meeting"
-	TypeInterview NoteType = "interview"
-	TypeReadme    NoteType = "readme"
-)
-
-// NoteTypes returns every valid note type.
-func NoteTypes() []NoteType {
-	return []NoteType{
-		TypeSession, TypeDesign, TypeDecisions, TypeTodo, TypeStandard,
-		TypeGlossary, TypeMeeting, TypeInterview, TypeReadme,
-	}
-}
-
-// Valid reports whether t is a known note type.
-func (t NoteType) Valid() bool { return slices.Contains(NoteTypes(), t) }
 
 // Author records who produced a note's content.
 type Author string

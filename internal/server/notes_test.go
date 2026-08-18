@@ -35,7 +35,7 @@ func TestSessionStart(t *testing.T) {
 	if note.Status != string(schema.StatusInProgress) {
 		t.Errorf("status = %q, want in-progress", note.Status)
 	}
-	if note.Type != string(schema.TypeSession) {
+	if note.Type != sessionCategory {
 		t.Errorf("type = %q, want session", note.Type)
 	}
 }
@@ -113,17 +113,17 @@ func TestNoteNew(t *testing.T) {
 	}{
 		{
 			name:    "design",
-			in:      NoteNewInput{Kind: "design", Title: "Gandalf", Project: "gandalf", Tags: []string{"design"}},
+			in:      NoteNewInput{Kind: "project", Facet: "design", Title: "Gandalf", Scope: "gandalf", Tags: []string{"design"}},
 			wantRef: "project:gandalf:design",
 		},
 		{
 			name:    "decisions",
-			in:      NoteNewInput{Kind: "decisions", Title: "Gandalf", Project: "gandalf", Tags: []string{"design"}},
+			in:      NoteNewInput{Kind: "project", Facet: "decisions", Title: "Gandalf", Scope: "gandalf", Tags: []string{"design"}},
 			wantRef: "project:gandalf:decisions",
 		},
 		{
 			name:    "todo",
-			in:      NoteNewInput{Kind: "todo", Title: "Gandalf", Project: "gandalf", Tags: []string{"todo"}},
+			in:      NoteNewInput{Kind: "project", Facet: "todo", Title: "Gandalf", Scope: "gandalf", Tags: []string{"todo"}},
 			wantRef: "project:gandalf:todo",
 		},
 		{
@@ -166,24 +166,29 @@ func TestNoteNewRejects(t *testing.T) {
 		want string
 	}{
 		{
-			name: "unknown kind",
+			name: "unknown category",
 			in:   NoteNewInput{Kind: "diary", Title: "Today"},
-			want: "unknown kind",
+			want: "unknown category",
 		},
 		{
 			name: "project note without a project",
-			in:   NoteNewInput{Kind: "design", Title: "Something"},
+			in:   NoteNewInput{Kind: "project", Facet: "design", Title: "Something"},
 			want: "scope",
 		},
 		{
 			name: "session, which has its own tool",
 			in:   NoteNewInput{Kind: "session", Title: "Work"},
-			want: "unknown kind",
+			want: "gandalf_session_start",
 		},
 		{
 			name: "unusable title",
 			in:   NoteNewInput{Kind: "standard", Title: "!!!"},
-			want: "slug",
+			want: "empty name",
+		},
+		{
+			name: "a category that cannot be created through the tools",
+			in:   NoteNewInput{Kind: "readme", Title: "Folder"},
+			want: "cannot be created",
 		},
 	}
 
@@ -201,7 +206,7 @@ func TestNoteNewRejects(t *testing.T) {
 func TestNoteNewRefusesToReplace(t *testing.T) {
 	h := newHarness(t)
 
-	in := NoteNewInput{Kind: "decisions", Title: "Gandalf", Project: "gandalf", Tags: []string{"decisions"}}
+	in := NoteNewInput{Kind: "project", Facet: "decisions", Title: "Gandalf", Scope: "gandalf", Tags: []string{"decisions"}}
 	h.call("gandalf_note_new", in, nil)
 
 	msg := h.callErr("gandalf_note_new", in)
@@ -215,7 +220,7 @@ func TestNoteAppend(t *testing.T) {
 
 	var created NoteOutput
 	h.call("gandalf_note_new", NoteNewInput{
-		Kind: "decisions", Title: "Gandalf", Project: "gandalf", Tags: []string{"decisions"},
+		Kind: "project", Facet: "decisions", Title: "Gandalf", Scope: "gandalf", Tags: []string{"decisions"},
 	}, &created)
 
 	var out NoteOutput

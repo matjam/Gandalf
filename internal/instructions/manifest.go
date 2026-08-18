@@ -2,6 +2,14 @@ package instructions
 
 import "github.com/matjam/gandalf/internal/schema"
 
+// The categories the shipped documents are filed under. They name defaults
+// from the category set rather than a closed enum, since a vault may add to
+// that set — but the documents Gandalf itself ships have fixed homes.
+const (
+	typeStandard schema.NoteType = "standard"
+	typeReadme   schema.NoteType = "readme"
+)
+
 // docs is the shipped instruction set, in the order it is seeded. Order
 // matters only for readability of seeding output; nothing depends on it.
 //
@@ -14,7 +22,7 @@ var docs = []Doc{
 		Source: "content/gandalf/operating.md",
 		Path:   "Gandalf/Operating.md",
 		Title:  "Operating Contract",
-		Type:   schema.TypeStandard,
+		Type:   typeStandard,
 		Role:   RoleCore,
 		Tags:   []string{"gandalf", "operating-contract"},
 		Related: []string{
@@ -28,7 +36,7 @@ var docs = []Doc{
 		Source: "content/gandalf/memory.md",
 		Path:   "Gandalf/Memory.md",
 		Title:  "Memory Protocol",
-		Type:   schema.TypeStandard,
+		Type:   typeStandard,
 		Role:   RoleCore,
 		Tags:   []string{"gandalf", "memory", "workflow"},
 		Related: []string{
@@ -41,7 +49,7 @@ var docs = []Doc{
 		Source: "content/gandalf/shipping.md",
 		Path:   "Gandalf/Shipping.md",
 		Title:  "Shipping",
-		Type:   schema.TypeStandard,
+		Type:   typeStandard,
 		Role:   RoleTopic,
 		Tags:   []string{"gandalf", "git", "ci", "shipping"},
 		Related: []string{
@@ -54,7 +62,7 @@ var docs = []Doc{
 		Source: "content/gandalf/diagnostics.md",
 		Path:   "Gandalf/Diagnostics.md",
 		Title:  "Diagnostics",
-		Type:   schema.TypeStandard,
+		Type:   typeStandard,
 		Role:   RoleTopic,
 		Tags:   []string{"gandalf", "diagnostics", "incidents"},
 		Related: []string{
@@ -67,7 +75,7 @@ var docs = []Doc{
 		Source: "content/gandalf/external-content.md",
 		Path:   "Gandalf/External Content.md",
 		Title:  "External Content",
-		Type:   schema.TypeStandard,
+		Type:   typeStandard,
 		Role:   RoleTopic,
 		Tags:   []string{"gandalf", "external-content", "trackers"},
 		Related: []string{
@@ -80,7 +88,7 @@ var docs = []Doc{
 		Source: "content/gandalf/corrections.md",
 		Path:   "Gandalf/Corrections.md",
 		Title:  "Correction History",
-		Type:   schema.TypeStandard,
+		Type:   typeStandard,
 		Role:   RoleReference,
 		Tags:   []string{"gandalf", "corrections"},
 		Related: []string{
@@ -94,7 +102,7 @@ var docs = []Doc{
 		Source:  "content/standards/architecture.md",
 		Path:    "Standards/architecture.md",
 		Title:   "Architecture",
-		Type:    schema.TypeStandard,
+		Type:    typeStandard,
 		Role:    RoleTopic,
 		Tags:    []string{"standards", "architecture"},
 		Related: []string{"Standards/README"},
@@ -105,7 +113,7 @@ var docs = []Doc{
 		Source:  "content/standards/code-quality.md",
 		Path:    "Standards/code-quality.md",
 		Title:   "Code Quality",
-		Type:    schema.TypeStandard,
+		Type:    typeStandard,
 		Role:    RoleTopic,
 		Tags:    []string{"standards", "code-quality"},
 		Related: []string{"Standards/README"},
@@ -116,7 +124,7 @@ var docs = []Doc{
 		Source:  "content/standards/api-design.md",
 		Path:    "Standards/api-design.md",
 		Title:   "API Design",
-		Type:    schema.TypeStandard,
+		Type:    typeStandard,
 		Role:    RoleTopic,
 		Tags:    []string{"standards", "api-design"},
 		Related: []string{"Standards/README"},
@@ -127,7 +135,7 @@ var docs = []Doc{
 		Source:  "content/standards/database.md",
 		Path:    "Standards/database.md",
 		Title:   "Database",
-		Type:    schema.TypeStandard,
+		Type:    typeStandard,
 		Role:    RoleTopic,
 		Tags:    []string{"standards", "database"},
 		Related: []string{"Standards/README"},
@@ -138,7 +146,7 @@ var docs = []Doc{
 		Source:  "content/standards/security.md",
 		Path:    "Standards/security.md",
 		Title:   "Security",
-		Type:    schema.TypeStandard,
+		Type:    typeStandard,
 		Role:    RoleTopic,
 		Tags:    []string{"standards", "security"},
 		Related: []string{"Standards/README", "Standards/privacy"},
@@ -149,7 +157,7 @@ var docs = []Doc{
 		Source:  "content/standards/observability.md",
 		Path:    "Standards/observability.md",
 		Title:   "Observability",
-		Type:    schema.TypeStandard,
+		Type:    typeStandard,
 		Role:    RoleTopic,
 		Tags:    []string{"standards", "observability"},
 		Related: []string{"Standards/README"},
@@ -160,7 +168,7 @@ var docs = []Doc{
 		Source:  "content/standards/privacy.md",
 		Path:    "Standards/privacy.md",
 		Title:   "Privacy",
-		Type:    schema.TypeStandard,
+		Type:    typeStandard,
 		Role:    RoleTopic,
 		Tags:    []string{"standards", "privacy"},
 		Related: []string{"Standards/README", "Gandalf/Operating"},
@@ -171,7 +179,7 @@ var docs = []Doc{
 		Source:  "content/standards/language-go.md",
 		Path:    "Standards/language-go.md",
 		Title:   "Go",
-		Type:    schema.TypeStandard,
+		Type:    typeStandard,
 		Role:    RoleTopic,
 		Tags:    []string{"standards", "language-go"},
 		Related: []string{"Standards/README", "Standards/architecture"},
@@ -182,7 +190,7 @@ var docs = []Doc{
 		Source:  "content/standards/language-python.md",
 		Path:    "Standards/language-python.md",
 		Title:   "Python",
-		Type:    schema.TypeStandard,
+		Type:    typeStandard,
 		Role:    RoleTopic,
 		Tags:    []string{"standards", "language-python"},
 		Related: []string{"Standards/README", "Standards/architecture"},
@@ -193,7 +201,7 @@ var docs = []Doc{
 		Source:  "content/standards/language-typescript.md",
 		Path:    "Standards/language-typescript.md",
 		Title:   "TypeScript",
-		Type:    schema.TypeStandard,
+		Type:    typeStandard,
 		Role:    RoleTopic,
 		Tags:    []string{"standards", "language-typescript"},
 		Related: []string{"Standards/README", "Standards/architecture"},
@@ -205,7 +213,7 @@ var docs = []Doc{
 		Source:  "content/readme/root.md",
 		Path:    "README.md",
 		Title:   "Vault",
-		Type:    schema.TypeReadme,
+		Type:    typeReadme,
 		Role:    RoleReference,
 		Tags:    []string{"vault", "folder-readme"},
 		Related: []string{"Gandalf/Operating"},
@@ -216,7 +224,7 @@ var docs = []Doc{
 		Source:  "content/readme/sessions.md",
 		Path:    "Sessions/README.md",
 		Title:   "Sessions",
-		Type:    schema.TypeReadme,
+		Type:    typeReadme,
 		Role:    RoleReference,
 		Tags:    []string{"vault", "folder-readme", "sessions"},
 		Related: []string{"Gandalf/Memory"},
@@ -227,7 +235,7 @@ var docs = []Doc{
 		Source:  "content/readme/projects.md",
 		Path:    "Projects/README.md",
 		Title:   "Projects",
-		Type:    schema.TypeReadme,
+		Type:    typeReadme,
 		Role:    RoleReference,
 		Tags:    []string{"vault", "folder-readme", "projects"},
 		Related: []string{"Gandalf/Memory"},
@@ -238,7 +246,7 @@ var docs = []Doc{
 		Source:  "content/readme/standards.md",
 		Path:    "Standards/README.md",
 		Title:   "Standards",
-		Type:    schema.TypeReadme,
+		Type:    typeReadme,
 		Role:    RoleReference,
 		Tags:    []string{"vault", "folder-readme", "standards"},
 		Related: []string{"Gandalf/Operating"},

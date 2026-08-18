@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/matjam/gandalf/internal/category"
 	"github.com/matjam/gandalf/internal/schema"
 )
 
@@ -11,16 +12,19 @@ import (
 // either supplied here or filled in by Gandalf; callers never write a
 // frontmatter block themselves.
 type NewNoteRequest struct {
-	Type  schema.NoteType
+	// Type is the category the note belongs to.
+	Type schema.NoteType
+
 	Title string
 
-	// Scope names the project a design or decisions note belongs to.
+	// Scope names the group a scoped note belongs to, such as a project.
 	Scope string
 
-	// Slug overrides the slug derived from the title.
-	Slug string
+	// Name overrides the name derived from the title. For a scoped category it
+	// is the facet.
+	Name string
 
-	// Path files the note explicitly, bypassing the layout's routing.
+	// Path files the note explicitly, bypassing the category's filing rule.
 	Path string
 
 	Tags    []string
@@ -28,20 +32,23 @@ type NewNoteRequest struct {
 	Author  schema.Author
 	Status  schema.Status
 
-	// Body replaces the type's template. The title heading is added when the
-	// body does not already open with one.
+	// Body replaces the category's template. The title heading is added when
+	// the body does not already open with one.
 	Body string
 
 	// On is the note's creation date. It defaults to today.
 	On schema.Date
 }
 
-// NewNote builds a note from a request: routing its path, generating valid
-// frontmatter, and filling in the template for its type. The note is returned
-// rather than written, so a caller can inspect it or refuse to overwrite.
+// NewNote builds a note from a request: filing it by its category, generating
+// valid frontmatter, and filling in that category's template. The note is
+// returned rather than written, so a caller can inspect it or refuse to
+// overwrite.
 func (v *Vault) NewNote(req NewNoteRequest) (*Note, error) {
-	if !req.Type.Valid() {
-		return nil, fmt.Errorf("unknown note type %q", req.Type)
+	cat, ok := v.categories.Lookup(string(req.Type))
+	if !ok {
+		return nil, fmt.Errorf("unknown category %q (want one of %s)",
+			req.Type, strings.Join(v.categories.CreatableNames(), ", "))
 	}
 	if strings.TrimSpace(req.Title) == "" {
 		return nil, fmt.Errorf("a note needs a title")
@@ -65,15 +72,21 @@ func (v *Vault) NewNote(req NewNoteRequest) (*Note, error) {
 
 	notePath := req.Path
 	if notePath == "" {
-		slug := req.Slug
-		if slug == "" {
-			slug = Slugify(req.Title)
+		name := req.Name
+		if name == "" && cat.Rule != category.RuleScoped {
+			slug := category.Slugify(req.Title)
+			if slug == "" {
+				return nil, fmt.Errorf("title %q produces an empty name; pass one explicitly", req.Title)
+			}
+
+			name = slug
+			if cat.Rule == category.RuleDated {
+				name = category.DatedName(on.Time(), slug)
+			}
 		}
-		if slug == "" {
-			return nil, fmt.Errorf("title %q produces an empty slug; pass an explicit slug", req.Title)
-		}
+
 		var err error
-		if notePath, err = v.layout.Path(req.Type, req.Scope, slug, on); err != nil {
+		if notePath, err = cat.Path(req.Scope, name, on.Time(), v.depth); err != nil {
 			return nil, err
 		}
 	}
@@ -85,26 +98,24 @@ func (v *Vault) NewNote(req NewNoteRequest) (*Note, error) {
 		}
 	}
 
-	note := &Note{
+	return &Note{
 		Path: notePath,
 		FM: schema.Frontmatter{
 			Type:    req.Type,
 			Created: on,
 			Updated: on,
-			Tags:    req.Tags,
+			Tags:    mergeTags(cat.Tags, req.Tags),
 			Related: related,
 			Author:  author,
 			Status:  req.Status,
 		},
-		Body: body(req),
-	}
-
-	return note, nil
+		Body: body(req, cat),
+	}, nil
 }
 
 // body returns the note's starting content: the caller's own text when given,
-// otherwise the template for its type. Either way it opens with an H1.
-func body(req NewNoteRequest) string {
+// otherwise the category's template. Either way it opens with an H1.
+func body(req NewNoteRequest, cat category.Category) string {
 	heading := "# " + strings.TrimSpace(req.Title)
 
 	if custom := strings.TrimSpace(req.Body); custom != "" {
@@ -114,68 +125,25 @@ func body(req NewNoteRequest) string {
 		return heading + "\n\n" + custom + "\n"
 	}
 
-	return heading + "\n" + template(req.Type)
+	if template := strings.TrimRight(cat.Template, "\n"); template != "" {
+		return heading + "\n" + template + "\n"
+	}
+
+	return heading + "\n"
 }
 
-// template returns the skeleton sections for a note type. The headings exist
-// to tell an agent what the note is for; empty ones are meant to be replaced,
-// not preserved.
-func template(t schema.NoteType) string {
-	switch t {
-	case schema.TypeSession:
-		return `
-## Goal
+// mergeTags combines a category's standing tags with the ones a caller asked
+// for, keeping the caller's order and dropping duplicates.
+func mergeTags(standing, requested []string) []string {
+	out := make([]string, 0, len(standing)+len(requested))
+	seen := map[string]bool{}
 
-What this work is trying to achieve, and why.
-
-## Context
-
-Prior work, constraints, and anything that would be hard to reconstruct later.
-
-## Decisions
-
-Decisions taken and the reasoning behind them, including alternatives rejected.
-
-## Notes
-
-Assumptions that may need revisiting; verified state versus intended behaviour.
-`
-	case schema.TypeDesign:
-		return `
-## Overview
-
-Current state only. Remove history rather than letting it accumulate here.
-
-## Architecture
-
-## Interfaces
-
-## Open Questions
-`
-	case schema.TypeDecisions:
-		return `
-Append-only. Record significant decisions as they are made, newest last, each
-with its context and the tradeoffs accepted.
-`
-	case schema.TypeStandard:
-		return `
-## Rules
-
-## Rationale
-`
-	case schema.TypeGlossary:
-		return `
-Terms and their meanings in this vault.
-`
-	case schema.TypeMeeting, schema.TypeInterview:
-		return `
-## Attendees
-
-## Notes
-
-## Actions
-`
-	default:
-		return "\n"
+	for _, tag := range append(append([]string{}, standing...), requested...) {
+		if tag = strings.TrimSpace(tag); tag != "" && !seen[tag] {
+			out = append(out, tag)
+			seen[tag] = true
+		}
 	}
+
+	return out
 }

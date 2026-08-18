@@ -28,7 +28,7 @@ func date(t *testing.T, s string) Date {
 func TestFrontmatterValidate(t *testing.T) {
 	valid := func() Frontmatter {
 		return Frontmatter{
-			Type:    TypeSession,
+			Type:    NoteType("session"),
 			Created: date(t, "2026-08-17"),
 			Updated: date(t, "2026-08-17"),
 			Tags:    []string{"agent", "semantic-search"},
@@ -53,9 +53,10 @@ func TestFrontmatterValidate(t *testing.T) {
 			wantErrors: []string{"type"},
 		},
 		{
-			name:       "type must be known",
-			mutate:     func(f *Frontmatter) { f.Type = "diary" },
-			wantErrors: []string{"type"},
+			// Whether a type names a declared category is checked by lint,
+			// which can see the vault; the schema only requires one.
+			name:   "an unfamiliar type is not this package's business",
+			mutate: func(f *Frontmatter) { f.Type = "incident-report" },
 		},
 		{
 			name:       "created is required",
@@ -142,11 +143,6 @@ func TestFrontmatterValidate(t *testing.T) {
 }
 
 func TestEnumsValid(t *testing.T) {
-	for _, ty := range NoteTypes() {
-		if !ty.Valid() {
-			t.Errorf("NoteType %q reported invalid", ty)
-		}
-	}
 	for _, a := range Authors() {
 		if !a.Valid() {
 			t.Errorf("Author %q reported invalid", a)
@@ -157,7 +153,7 @@ func TestEnumsValid(t *testing.T) {
 			t.Errorf("Status %q reported invalid", s)
 		}
 	}
-	if NoteType("").Valid() || Author("").Valid() || Status("").Valid() {
+	if Author("").Valid() || Status("").Valid() {
 		t.Error("empty enum values reported valid")
 	}
 }
