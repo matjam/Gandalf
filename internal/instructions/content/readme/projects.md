@@ -1,12 +1,16 @@
 # Projects
 
-One folder per project, work and personal alike.
+One folder per project, work and personal alike. Each holds up to three notes,
+addressed as `project:<name>:<facet>`:
 
-| Note | Purpose |
+| Facet | Purpose |
 |---|---|
-| `Design.md` | Current state only. Delete superseded history rather than accumulating it. |
-| `Decisions.md` | Append-only. Significant decisions with their context and accepted tradeoffs. |
-| `Todo.md` | The durable backlog. Concrete items, with finished work moved to a completed section. |
+| `design` | Current state only. Delete superseded history rather than accumulating it. |
+| `decisions` | Append-only. Significant decisions with their context and accepted tradeoffs. |
+| `todo` | The durable backlog. Concrete items, with finished work moved to a completed section. |
+
+Which filenames those become is set by the project category in
+`.gandalf/categories.json`.
 
 Design notes go stale silently. Check one against reality before trusting it, and fix
 it when it is wrong.
