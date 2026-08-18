@@ -2,6 +2,8 @@ package instructions
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/matjam/gandalf/internal/category"
 	"github.com/matjam/gandalf/internal/schema"
@@ -46,6 +48,10 @@ func Seed(v *vault.Vault, on schema.Date, restore bool) ([]SeedResult, error) {
 		if err := v.SetCategories(v.Categories()); err != nil {
 			return nil, err
 		}
+	}
+
+	if err := writeMachineryIgnore(v); err != nil {
+		return nil, err
 	}
 
 	ledger, err := LoadLedger(v)
@@ -93,6 +99,36 @@ func Seed(v *vault.Vault, on schema.Date, restore bool) ([]SeedResult, error) {
 	}
 
 	return results, nil
+}
+
+// machineryIgnore keeps derived files out of version control while leaving the
+// declarations in it.
+//
+// Categories and the seed ledger must travel with the vault: a category added
+// on one machine has to exist on the next, and a document deleted on one must
+// stay deleted. The search index must not travel — it is derived from the
+// notes, specific to one embedding model, and rebuildable in seconds.
+const machineryIgnore = `# Derived data. The declarations beside it are meant to be committed.
+index.db
+index.db-wal
+index.db-shm
+`
+
+// writeMachineryIgnore places the ignore file, leaving an existing one alone
+// in case the user has edited it.
+func writeMachineryIgnore(v *vault.Vault) error {
+	abs := filepath.Join(v.Root(), ".gandalf", ".gitignore")
+	if _, err := os.Stat(abs); err == nil {
+		return nil
+	}
+
+	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+		return fmt.Errorf("create machinery directory: %w", err)
+	}
+	if err := os.WriteFile(abs, []byte(machineryIgnore), 0o644); err != nil {
+		return fmt.Errorf("write machinery ignore file: %w", err)
+	}
+	return nil
 }
 
 // build turns a shipped document into a note, stamped with the version and

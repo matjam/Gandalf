@@ -30,6 +30,8 @@ func run(args []string) error {
 		return serve(args[1:])
 	case "init":
 		return initVault(args[1:])
+	case "reindex":
+		return reindex(args[1:])
 	case "doctor":
 		return doctor(args[1:])
 	case "lint":
@@ -47,13 +49,21 @@ func usage() {
 	fmt.Fprint(os.Stderr, `gandalf — vault tooling for agent memory
 
 usage:
-  gandalf serve  -vault DIR [-no-seed]
-  gandalf init   [-vault DIR]
-  gandalf doctor [-vault DIR]
-  gandalf lint   [-vault DIR] [-strict] [NOTE...]
+  gandalf serve   -vault DIR [-no-seed] [embedding flags]
+  gandalf init    [-vault DIR] [-restore]
+  gandalf reindex [-vault DIR] [embedding flags]
+  gandalf doctor  [-vault DIR]
+  gandalf lint    [-vault DIR] [-strict] [NOTE...]
+
+embedding flags:
+  -embed BACKEND    http (default) or none to disable search
+  -embed-url URL    OpenAI-compatible endpoint (default http://localhost:11434/v1)
+  -embed-model NAME embedding model (default nomic-embed-text)
+  -embed-dims N     vector length the model returns (default 768)
 
   serve   run the MCP server over stdio, seeding the vault first unless
           -no-seed is given; this is what an agent connects to
+  reindex build the search index up front, rather than on the first search
   init    create the vault if needed and seed any missing GandalfOS
           documents; never overwrites an existing file
   doctor  report how the vault's copy of each shipped document compares

@@ -41,10 +41,10 @@ Before substantive work:
    available on demand, and any session note still open today.
 2. If a session note is already open and this is the same unit of work, continue it
    rather than starting another.
-3. Look for prior work on the same topic before re-deciding anything. `gandalf_list`
-   shows what the vault holds — recent sessions, which projects exist, which standards
-   are there — without returning any content. For a known project, read its design,
-   decisions, and todo notes.
+3. Look for prior work on the same topic before re-deciding anything. `gandalf_search`
+   finds notes by meaning, so it turns up work described in words you did not think to
+   use; `gandalf_list` shows what exists by name when you already know what you are
+   after. For a known project, read its design, decisions, and todo notes.
 4. Distil what you found into a few bullets, surface them to the user, and confirm
    anything stale or consequential before relying on it.
 5. Create the session note with `gandalf_session_start` before proposing or writing
@@ -54,9 +54,11 @@ Read-only work creates no notes. Read freely, write nothing.
 
 ## Finding and Writing
 
-- `gandalf_list` enumerates the vault by kind — sessions, projects, standards, topics,
-  meetings, interviews — returning refs and titles but no content. Start here when you
-  need to know what exists.
+- `gandalf_search` finds notes by meaning rather than wording, which is what you want
+  when you know the subject but not how it was written down. Results carry refs, so a
+  hit can be read straight away.
+- `gandalf_list` enumerates the vault by category, returning refs and titles but no
+  content. Use it when you know what you are looking for by name.
 - `gandalf_session_start` opens the session note and returns its ref. Hold that ref;
   if you lose it, `gandalf_boot` will hand it back.
 - `gandalf_note_new` creates a note of a given kind and returns its ref. Gandalf

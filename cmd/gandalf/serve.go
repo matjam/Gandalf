@@ -23,6 +23,10 @@ func serve(args []string) error {
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
 	root := fs.String("vault", "", "path to the vault root (required)")
 	noSeed := fs.Bool("no-seed", false, "do not seed missing GandalfOS documents on startup")
+
+	var embedding embedderFlags
+	embedding.register(fs)
+
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -32,10 +36,20 @@ func serve(args []string) error {
 		return err
 	}
 
+	embedder, err := embedding.build()
+	if err != nil {
+		return err
+	}
+
+	// The endpoint is not contacted here. Search reports its own failure when
+	// called, so an unreachable model never stops a session starting.
+	srv := server.WithSearch(v, version, embedder)
+	defer srv.Close()
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	return server.New(v, version).Run(ctx)
+	return srv.Run(ctx)
 }
 
 // prepare opens the vault the server will serve, seeding it unless told not

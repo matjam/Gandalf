@@ -14,6 +14,7 @@ import (
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/matjam/gandalf/internal/embed"
 	"github.com/matjam/gandalf/internal/instructions"
 	"github.com/matjam/gandalf/internal/vault"
 )
@@ -26,15 +27,30 @@ const KindTopic = "topic"
 type Server struct {
 	vault *vault.Vault
 
+	// embedder backs search. Nil means search is unavailable and every other
+	// tool works as usual.
+	embedder embed.Embedder
+	searcher searcher
+
 	// name and version identify this build to the client.
 	name    string
 	version string
 }
 
-// New returns a server over the given vault.
+// New returns a server over the given vault, without search.
 func New(v *vault.Vault, version string) *Server {
 	return &Server{vault: v, name: "gandalf", version: version}
 }
+
+// WithSearch returns a server that can also search, using the given embedder.
+func WithSearch(v *vault.Vault, version string, embedder embed.Embedder) *Server {
+	s := New(v, version)
+	s.embedder = embedder
+	return s
+}
+
+// Close releases anything the server opened.
+func (s *Server) Close() error { return s.closeIndex() }
 
 // MCP builds the MCP server with every tool registered.
 func (s *Server) MCP() *sdk.Server {
@@ -55,6 +71,13 @@ func (s *Server) MCP() *sdk.Server {
 		Description: "Fetch one topic or standard by id, as listed by gandalf_boot. " +
 			"Read the matching topic before proposing or changing work it covers.",
 	}, s.topic)
+
+	sdk.AddTool(srv, &sdk.Tool{
+		Name: "gandalf_search",
+		Description: "Find notes by meaning, not just wording. Use this before starting work " +
+			"to see what the vault already says about a topic. Returns refs, so a hit can be " +
+			"read straight away.",
+	}, s.search)
 
 	sdk.AddTool(srv, &sdk.Tool{
 		Name: "gandalf_list",
