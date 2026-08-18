@@ -98,6 +98,39 @@ func (n *Note) Render() []byte {
 	return []byte(b.String())
 }
 
+// Touch records that the note changed on the given date.
+func (n *Note) Touch(on schema.Date) {
+	if !on.IsZero() {
+		n.FM.Updated = on
+	}
+}
+
+// Append adds content to the end of the body, under an optional heading.
+//
+// Appending is the only body edit Gandalf performs. Notes that are append-only
+// by convention — decisions, session notes — are exactly the ones an agent
+// writes to repeatedly, and appending cannot destroy what is already there.
+func (n *Note) Append(heading, content string) {
+	body := strings.TrimRight(n.Body, "\n")
+
+	var b strings.Builder
+	b.WriteString(body)
+	if body != "" {
+		b.WriteString("\n\n")
+	}
+	if heading = strings.TrimSpace(heading); heading != "" {
+		if !strings.HasPrefix(heading, "#") {
+			heading = "## " + heading
+		}
+		b.WriteString(heading)
+		b.WriteString("\n\n")
+	}
+	b.WriteString(strings.TrimSpace(content))
+	b.WriteString("\n")
+
+	n.Body = b.String()
+}
+
 // Title returns the note's first level-one heading, or the empty string when
 // it has none.
 func (n *Note) Title() string {

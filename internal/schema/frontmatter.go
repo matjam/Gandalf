@@ -93,6 +93,16 @@ func (f Frontmatter) Validate() []Issue {
 	return issues
 }
 
+// HasErrors reports whether any issue is an error rather than a warning.
+func HasErrors(issues []Issue) bool {
+	for _, i := range issues {
+		if i.Severity == SeverityError {
+			return true
+		}
+	}
+	return false
+}
+
 // validateTags enforces tag shape and uniqueness.
 func validateTags(tags []string) []Issue {
 	if len(tags) == 0 {

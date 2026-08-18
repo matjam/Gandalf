@@ -54,3 +54,6 @@ func (d Date) Year() int { return d.t.Year() }
 
 // Month returns the date's month.
 func (d Date) Month() time.Month { return d.t.Month() }
+
+// Day returns the date's day of the month.
+func (d Date) Day() int { return d.t.Day() }

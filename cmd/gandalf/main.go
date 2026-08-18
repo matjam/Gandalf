@@ -26,6 +26,8 @@ func run(args []string) error {
 	}
 
 	switch cmd := args[0]; cmd {
+	case "serve":
+		return serve(args[1:])
 	case "init":
 		return initVault(args[1:])
 	case "doctor":
@@ -45,10 +47,13 @@ func usage() {
 	fmt.Fprint(os.Stderr, `gandalf — vault tooling for agent memory
 
 usage:
+  gandalf serve  -vault DIR [-no-seed]
   gandalf init   [-vault DIR]
   gandalf doctor [-vault DIR]
   gandalf lint   [-vault DIR] [-strict] [NOTE...]
 
+  serve   run the MCP server over stdio, seeding the vault first unless
+          -no-seed is given; this is what an agent connects to
   init    create the vault if needed and seed any missing GandalfOS
           documents; never overwrites an existing file
   doctor  report how the vault's copy of each shipped document compares

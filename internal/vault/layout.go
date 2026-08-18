@@ -12,26 +12,46 @@ import (
 // nonSlug matches every run of characters that cannot appear in a slug.
 var nonSlug = regexp.MustCompile(`[^a-z0-9]+`)
 
+// Depth is how far dated notes are nested before their filename.
+type Depth string
+
+const (
+	// DepthMonth files a dated note as YYYY/MM/. The default: the filename
+	// already carries the full date, and a month of notes is easier to scan
+	// in one directory than spread across thirty holding one file each.
+	DepthMonth Depth = "month"
+
+	// DepthDay files a dated note as YYYY/MM/DD/, for vaults producing enough
+	// notes per month that a month directory stops being browsable.
+	DepthDay Depth = "day"
+)
+
 // Layout holds the vault's filing conventions: which directory each kind of
 // note belongs in. It is a value rather than a set of constants so a vault can
-// be seeded with different folder names without changing the routing logic.
+// use different folder names without changing the routing logic.
 type Layout struct {
-	Sessions   string
-	Projects   string
-	Standards  string
-	Meetings   string
-	Interviews string
-	Glossary   string // a file, not a directory
+	Instructions string
+	Sessions     string
+	Projects     string
+	Standards    string
+	Meetings     string
+	Interviews   string
+	Glossary     string // a file, not a directory
 
-	// DesignFile and DecisionsFile are the note names used inside a project
-	// directory.
+	// DesignFile, DecisionsFile, and TodoFile are the note names used inside
+	// a project directory.
 	DesignFile    string
 	DecisionsFile string
+	TodoFile      string
+
+	// SessionDepth applies to every dated note type, not only sessions.
+	SessionDepth Depth
 }
 
 // DefaultLayout returns the folder conventions GandalfOS seeds.
 func DefaultLayout() Layout {
 	return Layout{
+		Instructions:  "Gandalf",
 		Sessions:      "Sessions",
 		Projects:      "Projects",
 		Standards:     "Standards",
@@ -40,15 +60,17 @@ func DefaultLayout() Layout {
 		Glossary:      "Glossary.md",
 		DesignFile:    "Design.md",
 		DecisionsFile: "Decisions.md",
+		TodoFile:      "Todo.md",
+		SessionDepth:  DepthMonth,
 	}
 }
 
 // Path derives where a note of the given type belongs.
 //
-// Dated types are filed as <dir>/YYYY/MM/YYYY-MM-DD-<slug>.md; project types
-// as <projects>/<scope>/<file>; standards by slug; the glossary is a single
-// well-known file. Callers that want to file a note somewhere else pass an
-// explicit path instead of calling this.
+// Dated types are filed under a year and month directory and named for the day
+// they were created; project types under the project's directory; standards by
+// slug; the glossary is a single well-known file. Callers wanting a note
+// somewhere else pass an explicit path instead of calling this.
 func (l Layout) Path(t schema.NoteType, scope, slug string, on schema.Date) (string, error) {
 	switch t {
 	case schema.TypeSession, schema.TypeMeeting, schema.TypeInterview:
@@ -58,26 +80,13 @@ func (l Layout) Path(t schema.NoteType, scope, slug string, on schema.Date) (str
 		if on.IsZero() {
 			return "", fmt.Errorf("%s notes need a date", t)
 		}
-		dir := map[schema.NoteType]string{
-			schema.TypeSession:   l.Sessions,
-			schema.TypeMeeting:   l.Meetings,
-			schema.TypeInterview: l.Interviews,
-		}[t]
-		return path.Join(dir,
-			fmt.Sprintf("%04d", on.Year()),
-			fmt.Sprintf("%02d", int(on.Month())),
-			fmt.Sprintf("%s-%s.md", on, slug),
-		), nil
+		return path.Join(l.datedDir(t, on), fmt.Sprintf("%s-%s.md", on, slug)), nil
 
-	case schema.TypeDesign, schema.TypeDecisions:
+	case schema.TypeDesign, schema.TypeDecisions, schema.TypeTodo:
 		if scope == "" {
 			return "", fmt.Errorf("%s notes need a project scope", t)
 		}
-		file := l.DesignFile
-		if t == schema.TypeDecisions {
-			file = l.DecisionsFile
-		}
-		return path.Join(l.Projects, scope, file), nil
+		return path.Join(l.Projects, scope, l.projectFile(t)), nil
 
 	case schema.TypeStandard:
 		if slug == "" {
@@ -95,6 +104,33 @@ func (l Layout) Path(t schema.NoteType, scope, slug string, on schema.Date) (str
 
 	default:
 		return "", fmt.Errorf("unknown note type %q", t)
+	}
+}
+
+// datedDir returns the directory a dated note of this type is filed in.
+func (l Layout) datedDir(t schema.NoteType, on schema.Date) string {
+	root := map[schema.NoteType]string{
+		schema.TypeSession:   l.Sessions,
+		schema.TypeMeeting:   l.Meetings,
+		schema.TypeInterview: l.Interviews,
+	}[t]
+
+	parts := []string{root, fmt.Sprintf("%04d", on.Year()), fmt.Sprintf("%02d", int(on.Month()))}
+	if l.SessionDepth == DepthDay {
+		parts = append(parts, fmt.Sprintf("%02d", on.Day()))
+	}
+	return path.Join(parts...)
+}
+
+// projectFile returns the filename a project-scoped note type uses.
+func (l Layout) projectFile(t schema.NoteType) string {
+	switch t {
+	case schema.TypeDecisions:
+		return l.DecisionsFile
+	case schema.TypeTodo:
+		return l.TodoFile
+	default:
+		return l.DesignFile
 	}
 }
 
