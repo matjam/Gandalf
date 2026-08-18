@@ -284,3 +284,75 @@ func mustRef(t *testing.T, v *vault.Vault, s string) vault.Ref {
 	}
 	return ref
 }
+
+// TestReindexReportsProgress covers what a caller needs to distinguish a slow
+// pass from a stuck one: which note is being worked on, how far through it is,
+// and what each note cost.
+func TestReindexReportsProgress(t *testing.T) {
+	ctx := context.Background()
+	v, store, embedder := fixture(t)
+
+	var events []Event
+	report, err := ReindexWith(ctx, v, store, embedder, namer(v), func(ev Event) {
+		events = append(events, ev)
+	})
+	if err != nil {
+		t.Fatalf("ReindexWith: %v", err)
+	}
+
+	if len(events) == 0 {
+		t.Fatal("no progress was reported")
+	}
+	if got := events[len(events)-1]; got.Done != got.Total {
+		t.Errorf("last event is %d of %d; the count should finish where it started", got.Done, got.Total)
+	}
+
+	var embedded int
+	for i, ev := range events {
+		if ev.Done != i+1 {
+			t.Errorf("event %d reports Done = %d; progress must not skip or repeat", i, ev.Done)
+		}
+		if ev.Total != len(events) {
+			t.Errorf("event %d reports Total = %d, want %d", i, ev.Total, len(events))
+		}
+		if ev.Ref == "" || strings.HasSuffix(ev.Ref, ".md") {
+			t.Errorf("event %d names %q; progress should carry a ref", i, ev.Ref)
+		}
+		if ev.Outcome == Embedded {
+			embedded++
+			if ev.Chunks == 0 {
+				t.Errorf("event %d embedded a note but reported no chunks", i)
+			}
+		}
+	}
+	if embedded != report.Indexed {
+		t.Errorf("%d embedded events for %d indexed notes", embedded, report.Indexed)
+	}
+
+	// A second pass reports the same notes as unchanged, which is what makes
+	// the common case cheap and worth distinguishing in the output.
+	events = nil
+	if _, err := ReindexWith(ctx, v, store, embedder, namer(v), func(ev Event) {
+		events = append(events, ev)
+	}); err != nil {
+		t.Fatalf("second ReindexWith: %v", err)
+	}
+	for _, ev := range events {
+		if ev.Outcome == Embedded {
+			t.Errorf("%s was re-embedded although it had not changed", ev.Ref)
+		}
+	}
+}
+
+// TestReindexStopsWhenCancelled keeps a cancelled pass from running the whole
+// vault. Work already committed stays valid, so the next pass resumes.
+func TestReindexStopsWhenCancelled(t *testing.T) {
+	v, store, embedder := fixture(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if _, err := Reindex(ctx, v, store, embedder, namer(v)); err == nil {
+		t.Error("a cancelled reindex reported success")
+	}
+}

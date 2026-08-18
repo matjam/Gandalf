@@ -3,6 +3,7 @@ package index
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/matjam/gandalf/internal/embed"
 	"github.com/matjam/gandalf/internal/vault"
@@ -28,10 +29,46 @@ type Report struct {
 // itself.
 type Namer func(path string) string
 
-// Progress reports how far a reindex has got. It is called after each note is
-// considered, whether or not that note needed embedding, so a caller can show
-// movement through a vault where most notes are already current.
-type Progress func(done, total int)
+// Outcome is what a reindex decided about one note.
+type Outcome string
+
+const (
+	// Embedded means the note's chunks were sent to the model. This is the
+	// expensive one, and the only one worth timing.
+	Embedded Outcome = "indexed"
+
+	// Unchanged means the stored chunks already matched, so nothing was sent.
+	Unchanged Outcome = "unchanged"
+
+	// Skipped means the note was excluded from the index, or too broken to
+	// parse.
+	Skipped Outcome = "skipped"
+)
+
+// Event reports one note's progress through a reindex.
+//
+// The current note is included because a slow pass with no output is
+// indistinguishable from a hung one, and knowing which note is being embedded
+// is what turns "still going" into an estimate.
+type Event struct {
+	Done  int
+	Total int
+
+	Path string
+	Ref  string
+
+	Outcome Outcome
+
+	// Chunks is how many pieces the note was split into, and Elapsed how long
+	// embedding them took. Both are zero unless the note was embedded.
+	Chunks  int
+	Elapsed time.Duration
+}
+
+// Progress reports how far a reindex has got. It is called once per note,
+// whether or not that note needed embedding, so a caller can show movement
+// through a vault where most notes are already current.
+type Progress func(Event)
 
 // Reindex brings the index into line with the vault.
 //
@@ -54,11 +91,20 @@ func ReindexWith(ctx context.Context, v *vault.Vault, store *Store, embedder emb
 
 	total := len(paths)
 	done := 0
-	step := func() {
+	step := func(path string, outcome Outcome, chunks int, elapsed time.Duration) {
 		done++
-		if onProgress != nil {
-			onProgress(done, total)
+		if onProgress == nil {
+			return
 		}
+		onProgress(Event{
+			Done:    done,
+			Total:   total,
+			Path:    path,
+			Ref:     name(path),
+			Outcome: outcome,
+			Chunks:  chunks,
+			Elapsed: elapsed,
+		})
 	}
 
 	indexed, err := store.Paths()
@@ -87,7 +133,7 @@ func ReindexWith(ctx context.Context, v *vault.Vault, store *Store, embedder emb
 		if err != nil {
 			// A note too broken to parse is lint's business; leaving it out of
 			// the index is better than failing the whole run.
-			step()
+			step(path, Skipped, 0, 0)
 			continue
 		}
 
@@ -104,7 +150,7 @@ func ReindexWith(ctx context.Context, v *vault.Vault, store *Store, embedder emb
 					return Report{}, err
 				}
 			}
-			step()
+			step(path, Skipped, 0, 0)
 			continue
 		}
 
@@ -114,7 +160,7 @@ func ReindexWith(ctx context.Context, v *vault.Vault, store *Store, embedder emb
 		}
 		if fresh {
 			report.Unchanged++
-			step()
+			step(path, Unchanged, len(chunks), 0)
 			continue
 		}
 
@@ -123,6 +169,7 @@ func ReindexWith(ctx context.Context, v *vault.Vault, store *Store, embedder emb
 			texts = append(texts, embedded(c))
 		}
 
+		started := time.Now()
 		vectors, err := embedder.Embed(ctx, texts)
 		if err != nil {
 			return Report{}, fmt.Errorf("embed %q: %w", path, err)
@@ -135,7 +182,7 @@ func ReindexWith(ctx context.Context, v *vault.Vault, store *Store, embedder emb
 			return Report{}, err
 		}
 		report.Indexed++
-		step()
+		step(path, Embedded, len(chunks), time.Since(started))
 	}
 
 	for path := range indexed {

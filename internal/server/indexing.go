@@ -99,9 +99,9 @@ func (s *Server) startIndexing(ctx context.Context) {
 
 		_, err = index.ReindexWith(ctx, s.vault, store, s.embedder,
 			func(path string) string { return s.canonical(path).String() },
-			func(done, total int) {
+			func(ev index.Event) {
 				s.indexer.mu.Lock()
-				s.indexer.done, s.indexer.total = done, total
+				s.indexer.done, s.indexer.total = ev.Done, ev.Total
 				s.indexer.mu.Unlock()
 			})
 
