@@ -50,6 +50,34 @@ func Rules() []Rule {
 // Valid reports whether r is a known rule.
 func (r Rule) Valid() bool { return slices.Contains(Rules(), r) }
 
+// Mutability says whether a note's body may be rewritten in place, or only
+// added to.
+//
+// The distinction is about what the note is for rather than how careful the
+// writer is. A session note and a decisions log are chronological records: what
+// was known at the time is the whole value, and a tidier rewrite destroys it
+// without anybody noticing. A design note, a backlog, or a standard describes
+// the current state, where the failure mode is staleness rather than loss.
+type Mutability string
+
+const (
+	// AppendOnly permits appending only. Nothing already written can be
+	// removed or rewritten through the tools.
+	AppendOnly Mutability = "append-only"
+
+	// Replaceable permits whole-body, section, and anchored replacement as
+	// well as appending.
+	Replaceable Mutability = "replaceable"
+)
+
+// Mutabilities returns every mutability.
+func Mutabilities() []Mutability { return []Mutability{AppendOnly, Replaceable} }
+
+// Valid reports whether m is a known mutability. The empty value is not:
+// callers test it separately, because undeclared and declared-append-only need
+// to be told apart when working out what a category inherits.
+func (m Mutability) Valid() bool { return slices.Contains(Mutabilities(), m) }
+
 // Category is one kind of note: what it is called, how it is filed, and what a
 // new one starts out looking like.
 type Category struct {
@@ -80,15 +108,28 @@ type Category struct {
 	// Template is the body a new note starts with, below its heading.
 	Template string `json:"template,omitempty"`
 
+	// Mutability says whether these notes may be rewritten in place. A scoped
+	// category's facets may each override it; left unset here and there, a
+	// category inherits what the shipped defaults declare for its name, and
+	// failing that is append-only, because losing a record is worse than
+	// having to append to one.
+	Mutability Mutability `json:"mutability,omitempty"`
+
 	// Retired hides a category from creation and from listings without
 	// orphaning the notes already filed under it, which stay addressable.
 	Retired bool `json:"retired,omitempty"`
 }
 
 // Facet is one of the notes a scoped category holds.
+//
+// Mutability lives here as well as on the category because one category's
+// facets genuinely differ: a project's design note describes the current state
+// and should be rewritten as it changes, while its decisions log is a
+// chronological record and must not be.
 type Facet struct {
-	Name string `json:"name"`
-	File string `json:"file"`
+	Name       string     `json:"name"`
+	File       string     `json:"file"`
+	Mutability Mutability `json:"mutability,omitempty"`
 }
 
 // Creatable reports whether new notes of this category can be made through the
@@ -116,6 +157,49 @@ func (c Category) FacetNames() []string {
 	return out
 }
 
+// facet returns a facet by name.
+func (c Category) facet(name string) (Facet, bool) {
+	for _, f := range c.Facets {
+		if strings.EqualFold(f.Name, name) {
+			return f, true
+		}
+	}
+	return Facet{}, false
+}
+
+// MutabilityOf reports whether a note of this category may be rewritten in
+// place. Pass the facet name for a scoped category, or the empty string.
+//
+// A category that declares nothing inherits from the shipped defaults, matched
+// by name. That is what keeps a vault whose categories.json predates this
+// field behaving as designed, rather than having every note silently become
+// append-only on upgrade. Nothing is rewritten on disk to achieve it: the
+// vault's file still says what the user put there.
+func (c Category) MutabilityOf(facet string) Mutability {
+	if m := c.declaredMutability(facet); m != "" {
+		return m
+	}
+
+	if shipped, ok := Defaults().Lookup(c.Name); ok {
+		if m := shipped.declaredMutability(facet); m != "" {
+			return m
+		}
+	}
+
+	return AppendOnly
+}
+
+// declaredMutability returns what this category says about a facet, most
+// specific first, or the empty string when it says nothing.
+func (c Category) declaredMutability(facet string) Mutability {
+	if facet != "" {
+		if f, ok := c.facet(facet); ok && f.Mutability != "" {
+			return f.Mutability
+		}
+	}
+	return c.Mutability
+}
+
 // Reserved names cannot be categories: refs use them for things the vault does
 // not file. Taking one would make those refs ambiguous.
 var Reserved = []string{"path", "topic", "all", "latest"}
@@ -139,6 +223,9 @@ func (c Category) Validate() error {
 		return fmt.Errorf("category plural %q must be lowercase letters, digits, and hyphens", c.Plural)
 	case !c.Rule.Valid():
 		return fmt.Errorf("category %q has unknown rule %q (want one of %s)", c.Name, c.Rule, ruleList())
+	case c.Mutability != "" && !c.Mutability.Valid():
+		return fmt.Errorf("category %q has unknown mutability %q (want %s or %s)",
+			c.Name, c.Mutability, AppendOnly, Replaceable)
 	}
 
 	switch c.Rule {
@@ -165,6 +252,9 @@ func (c Category) Validate() error {
 				return fmt.Errorf("category %q: facet %q needs a filename ending in .md", c.Name, f.Name)
 			case seen[f.Name]:
 				return fmt.Errorf("category %q: duplicate facet %q", c.Name, f.Name)
+			case f.Mutability != "" && !f.Mutability.Valid():
+				return fmt.Errorf("category %q: facet %q has unknown mutability %q (want %s or %s)",
+					c.Name, f.Name, f.Mutability, AppendOnly, Replaceable)
 			}
 			seen[f.Name] = true
 		}

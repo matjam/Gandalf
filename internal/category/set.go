@@ -19,10 +19,13 @@ type Set struct {
 func Defaults() *Set {
 	return &Set{Categories: []Category{
 		{
-			Name:        "session",
-			Plural:      "sessions",
-			Rule:        RuleDated,
-			Folder:      "Sessions",
+			Name:   "session",
+			Plural: "sessions",
+			Rule:   RuleDated,
+			Folder: "Sessions",
+			// A session note records what was known at the time. Compacting
+			// one destroys the only thing it was for.
+			Mutability:  AppendOnly,
 			Description: "One note per logical unit of work, written as the work happens.",
 			Template: `
 ## Goal
@@ -43,14 +46,18 @@ Assumptions that may need revisiting; verified state versus intended behaviour.
 `,
 		},
 		{
-			Name:        "project",
-			Plural:      "projects",
-			Rule:        RuleScoped,
-			Folder:      "Projects",
+			Name:   "project",
+			Plural: "projects",
+			Rule:   RuleScoped,
+			Folder: "Projects",
+			// Design and todo describe the current state, so staleness is
+			// their failure mode rather than loss; decisions is a log and
+			// overrides.
+			Mutability:  Replaceable,
 			Description: "A project's current design, its decision log, and its backlog.",
 			Facets: []Facet{
 				{Name: "design", File: "Design.md"},
-				{Name: "decisions", File: "Decisions.md"},
+				{Name: "decisions", File: "Decisions.md", Mutability: AppendOnly},
 				{Name: "todo", File: "Todo.md"},
 			},
 			Template: `
@@ -64,6 +71,7 @@ Current state only. Remove history rather than letting it accumulate here.
 			Plural:      "standards",
 			Rule:        RuleNamed,
 			Folder:      "Standards",
+			Mutability:  Replaceable,
 			Description: "An engineering standard applied when writing code.",
 			Tags:        []string{"standards"},
 			Template: `
@@ -77,6 +85,7 @@ Current state only. Remove history rather than letting it accumulate here.
 			Plural:      "meetings",
 			Rule:        RuleDated,
 			Folder:      "Meetings",
+			Mutability:  AppendOnly,
 			Description: "Notes from a conversation with other people, including interviews.",
 			Template: `
 ## Attendees
@@ -91,6 +100,7 @@ Current state only. Remove history rather than letting it accumulate here.
 			Plural:      "glossary",
 			Rule:        RuleSingleton,
 			Folder:      "Glossary.md",
+			Mutability:  Replaceable,
 			Description: "Terms and what they mean in this vault.",
 		},
 		{

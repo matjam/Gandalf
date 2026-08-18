@@ -11,6 +11,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -32,9 +33,35 @@ type Server struct {
 	embedder embed.Embedder
 	searcher searcher
 
+	// read records which notes have been read during this connection, so a
+	// replacement cannot be aimed at text the caller has not seen. It is
+	// deliberately not persisted: a restarted process has forgotten what the
+	// note said, and so has whatever is driving it.
+	mu   sync.Mutex
+	read map[string]bool
+
 	// name and version identify this build to the client.
 	name    string
 	version string
+}
+
+// markRead records that a note's current text has been seen.
+func (s *Server) markRead(ref vault.Ref) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.read == nil {
+		s.read = map[string]bool{}
+	}
+	s.read[ref.String()] = true
+}
+
+// hasRead reports whether a note has been read during this connection.
+func (s *Server) hasRead(ref vault.Ref) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return s.read[ref.String()]
 }
 
 // New returns a server over the given vault, without search.
@@ -103,9 +130,20 @@ func (s *Server) MCP() *sdk.Server {
 
 	sdk.AddTool(srv, &sdk.Tool{
 		Name: "gandalf_note_append",
-		Description: "Append content to a note, optionally under a new heading. This is " +
-			"the only way to change a note's body, so nothing already recorded is lost.",
+		Description: "Append content to a note, optionally under a new heading. Adding to " +
+			"a note can never lose what it already says, so prefer it whenever the new " +
+			"content sits alongside the old rather than replacing it.",
 	}, s.noteAppend)
+
+	sdk.AddTool(srv, &sdk.Tool{
+		Name: "gandalf_note_replace",
+		Description: "Rewrite part of a note that describes current state — a design note, " +
+			"a backlog, a standard. Name a section to rewrite just that section, or give " +
+			"from and to anchors to rewrite the span between them; with neither, the whole " +
+			"body is replaced. Returns the text it removed, so check that against what you " +
+			"meant to remove. Refused on notes that are a chronological record, such as " +
+			"sessions and decision logs: append to those instead. Read the note first.",
+	}, s.noteReplace)
 
 	sdk.AddTool(srv, &sdk.Tool{
 		Name: "gandalf_note_update",

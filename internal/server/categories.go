@@ -22,6 +22,14 @@ type CategoryView struct {
 	Tags        []string `json:"default_tags,omitempty"`
 	Retired     bool     `json:"retired,omitempty"`
 
+	// Mutability says whether these notes may be rewritten in place or only
+	// added to.
+	Mutability string `json:"mutability"`
+
+	// FacetMutability names the facets that answer differently from the
+	// category as a whole, so the exception is visible without trying it.
+	FacetMutability map[string]string `json:"facet_mutability,omitempty"`
+
 	// RefForm shows how notes of this category are addressed.
 	RefForm string `json:"ref_form"`
 
@@ -66,6 +74,8 @@ type CategoryCreateInput struct {
 	Description string   `json:"description" jsonschema:"what belongs here; shown when deciding where to put a note"`
 	Tags        []string `json:"default_tags,omitempty" jsonschema:"tags applied to every note in this category"`
 	Template    string   `json:"template,omitempty" jsonschema:"the body a new note starts with, below its heading"`
+
+	Mutability string `json:"mutability,omitempty" jsonschema:"append-only for a chronological record such as a log, replaceable for a note describing current state; defaults to append-only"`
 }
 
 // CategoryChangeOutput reports the resulting category.
@@ -84,6 +94,7 @@ func (s *Server) categoryCreate(ctx context.Context, _ *sdk.CallToolRequest, in 
 		Description: in.Description,
 		Tags:        in.Tags,
 		Template:    in.Template,
+		Mutability:  category.Mutability(strings.TrimSpace(in.Mutability)),
 	}
 
 	for _, name := range in.Facets {
@@ -197,17 +208,31 @@ func (s *Server) categoryCounts() (map[string]int, error) {
 
 // view renders a category for a tool result.
 func view(c category.Category, notes int) CategoryView {
+	overall := c.MutabilityOf("")
+
+	var exceptions map[string]string
+	for _, facet := range c.FacetNames() {
+		if m := c.MutabilityOf(facet); m != overall {
+			if exceptions == nil {
+				exceptions = map[string]string{}
+			}
+			exceptions[facet] = string(m)
+		}
+	}
+
 	return CategoryView{
-		Name:        c.Name,
-		Plural:      c.Plural,
-		Rule:        string(c.Rule),
-		Folder:      c.Folder,
-		Facets:      c.FacetNames(),
-		Description: c.Description,
-		Tags:        c.Tags,
-		Retired:     c.Retired,
-		RefForm:     refForm(c),
-		Notes:       notes,
+		Name:            c.Name,
+		Plural:          c.Plural,
+		Rule:            string(c.Rule),
+		Folder:          c.Folder,
+		Facets:          c.FacetNames(),
+		Description:     c.Description,
+		Tags:            c.Tags,
+		Retired:         c.Retired,
+		Mutability:      string(overall),
+		FacetMutability: exceptions,
+		RefForm:         refForm(c),
+		Notes:           notes,
 	}
 }
 

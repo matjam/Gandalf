@@ -62,6 +62,7 @@ func (s *Server) noteRead(ctx context.Context, _ *sdk.CallToolRequest, in NoteRe
 			if docErr != nil {
 				return nil, NoteOutput{}, docErr
 			}
+			s.markRead(ref)
 			return nil, NoteOutput{
 				Ref:     ref.String(),
 				Title:   doc.Title,
@@ -323,7 +324,14 @@ func (s *Server) noteUpdate(ctx context.Context, _ *sdk.CallToolRequest, in Note
 
 // describe renders a note for a tool result, translating the links stored on
 // disk back into refs.
+//
+// This is the one place a note's full text leaves the server, so it is also
+// where the note is recorded as seen. Replacement requires that: a caller
+// holding the current text can check what a bounded edit removed, and one that
+// has not read the note cannot.
 func (s *Server) describe(ref vault.Ref, n *vault.Note) NoteOutput {
+	s.markRead(ref)
+
 	return NoteOutput{
 		Ref:     ref.String(),
 		Title:   n.Title(),

@@ -13,6 +13,10 @@ import (
 // there.
 const BacklinksHeading = "## Backlinks"
 
+// backlinksTitle is the same heading without its hashes, for recognising the
+// block when a caller names a section rather than writing a heading line.
+const backlinksTitle = "Backlinks"
+
 // backlinksNote explains the block to whoever opens the file in an editor and
 // wonders why their edits keep vanishing.
 const backlinksNote = "*Maintained by Gandalf. Edits here are overwritten.*"

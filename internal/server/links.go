@@ -125,6 +125,17 @@ func (s *Server) toRefs(text string) string {
 	})
 }
 
+// toPaths rewrites ref links in text to the form stored on disk. It is for
+// matching rather than writing, so unlike resolveLinks it has no opinion about
+// whether the target exists: an anchor names text in a note, and that text may
+// well contain a link that is dead.
+func (s *Server) toPaths(text string) string {
+	return vault.RewriteWikilinks(text, func(target string) string {
+		path, _ := s.linkPath(target)
+		return path
+	})
+}
+
 // refsFor renders stored link targets as refs, for a tool result.
 func (s *Server) refsFor(targets []string) []string {
 	out := make([]string, 0, len(targets))

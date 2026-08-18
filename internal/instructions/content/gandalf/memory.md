@@ -63,8 +63,13 @@ Read-only work creates no notes. Read freely, write nothing.
 - `gandalf_session_start` opens the session note and returns its ref. Hold that ref; if
   you lose it, `gandalf_boot` will hand it back.
 - `gandalf_note_new` creates a note of a given kind and returns its ref.
-- `gandalf_note_append` is the only way to change a note's body, and cannot destroy what
-  is already there.
+- `gandalf_note_append` adds to a note's body without touching what is already there.
+  Prefer it whenever the new text sits alongside the old.
+- `gandalf_note_replace` rewrites part of a note that describes current state — a
+  design note, a backlog, a standard. Name a `section` to rewrite one section, or give
+  `from` and `to` anchors to rewrite the span between them; with neither, the whole body
+  goes. It returns the text it removed: read that, and check it is what you meant to
+  remove.
 - `gandalf_note_update` changes metadata only — tags, related links, status.
 - `gandalf_note_delete` removes a note, refusing while anything still links to it and
   listing what does.
@@ -96,6 +101,27 @@ they are addressed. The vault declares its own.
   notes readable and writable.
 - `gandalf_category_delete` removes one entirely, and only when it holds no notes.
 
+## What May Be Rewritten
+
+Each category declares whether its notes may be rewritten in place. The distinction is
+what the note is for, not how careful you are being.
+
+| | |
+|---|---|
+| **Append-only** | Sessions, decision logs, meetings. A chronological record of what was known at the time. Add to these; a tidier rewrite destroys the only thing they were for. |
+| **Replaceable** | Design notes, backlogs, standards, the glossary, operating topics. These describe the current state, so the failure is staleness rather than loss. |
+
+`gandalf_category_list` reports which is which, and `gandalf_note_replace` refuses an
+append-only note rather than letting you find out afterwards.
+
+Even where replacement is allowed, prefer the narrowest edit that does the job: a
+section rather than the whole body, a span rather than a section. Read the note first —
+the tool requires it — and check the text it reports removing against what you meant to
+remove.
+
+Frontmatter is never yours to edit, in any category. `gandalf_note_update` changes
+metadata; the `## Backlinks` block is maintained and is rewritten whenever links change.
+
 ## Session Notes
 
 Update the session note as the work happens, not at the end. Capture:
@@ -116,14 +142,16 @@ Do not compact session notes. They are the record of what was known at the time.
 Each project has up to three notes, addressed as `project:<name>:design`,
 `project:<name>:decisions`, and `project:<name>:todo`.
 
-- **Design** describes the current state only. Delete superseded history rather than
-  letting it accumulate; keep it short enough to stay read.
+- **Design** describes the current state only. Rewrite the section that has gone stale
+  with `gandalf_note_replace` rather than appending a correction beneath it; keep the
+  note short enough to stay read.
 - **Decisions** is append-only. Record significant decisions as they are made, with
   their context and the tradeoffs accepted. Supersede an old entry with a new one
   rather than rewriting it.
 - **Todo** is the durable backlog. Add concrete items whenever the user asks to come
   back to something, or when the work turns up something needing a later revisit. Move
-  finished work to a completed section instead of leaving status to be inferred.
+  finished work into a completed section instead of leaving status to be inferred — that
+  is a section replacement at each end, not an append.
 
 Before starting work on a project, check its design note for claims that have gone
 stale.
