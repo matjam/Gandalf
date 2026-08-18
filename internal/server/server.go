@@ -232,7 +232,17 @@ func (s *Server) suggest(raw string) (vault.Ref, bool) {
 // one per note matters — two names for the same note would have boot and lint
 // disagreeing about what to call it.
 func (s *Server) canonical(notePath string) vault.Ref {
-	if ref := s.vault.RefFor(notePath); ref.Kind != vault.KindPath {
+	return CanonicalRef(s.vault, notePath)
+}
+
+// CanonicalRef returns the one ref addressing a note.
+//
+// It is exported because anything that records refs — the search index built
+// from the command line, as much as the server — has to agree with the tools
+// about a note's name. Two namers produced two answers for the shipped
+// documents, and the index kept whichever ran last.
+func CanonicalRef(v *vault.Vault, notePath string) vault.Ref {
+	if ref := v.RefFor(notePath); ref.Kind != vault.KindPath {
 		return ref
 	}
 
@@ -242,7 +252,7 @@ func (s *Server) canonical(notePath string) vault.Ref {
 		}
 	}
 
-	return s.vault.RefFor(notePath)
+	return v.RefFor(notePath)
 }
 
 // writable resolves a ref and refuses the read-only kinds.

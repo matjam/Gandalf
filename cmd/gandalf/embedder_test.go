@@ -17,8 +17,22 @@ func TestEmbedderFlags(t *testing.T) {
 		wantErr string
 	}{
 		{
-			name: "defaults point at a local model",
+			// The default runs in this process, so search works on a fresh
+			// install without anybody standing up an inference server first.
+			name: "defaults need no external service",
 			args: nil,
+			check: func(t *testing.T, e embed.Embedder) {
+				if _, ok := e.(*embed.Local); !ok {
+					t.Fatalf("embedder = %T, want the in-process model", e)
+				}
+				if e.Window() <= 0 || e.Dims() <= 0 {
+					t.Errorf("embedder reports window %d and dims %d", e.Window(), e.Dims())
+				}
+			},
+		},
+		{
+			name: "an existing endpoint is one flag away",
+			args: []string{"-embed", "http"},
 			check: func(t *testing.T, e embed.Embedder) {
 				h, ok := e.(embed.HTTP)
 				if !ok {
@@ -27,18 +41,25 @@ func TestEmbedderFlags(t *testing.T) {
 				if h.BaseURL != defaultEmbedURL || h.ModelName != defaultEmbedModel {
 					t.Errorf("endpoint = %s %s", h.BaseURL, h.ModelName)
 				}
-				if h.Dims() != defaultEmbedDims {
-					t.Errorf("dims = %d", h.Dims())
+				if h.Dims() != defaultEmbedDims || h.Window() != defaultEmbedWindow {
+					t.Errorf("dims = %d, window = %d", h.Dims(), h.Window())
 				}
 			},
 		},
 		{
-			name: "a homelab endpoint is one flag away",
-			args: []string{"-embed-url", "http://192.168.1.5:8081/v1", "-embed-model", "bge-small", "-embed-dims", "384"},
+			name: "a homelab endpoint is fully configurable",
+			args: []string{
+				"-embed", "http",
+				"-embed-url", "http://192.168.1.5:8081/v1",
+				"-embed-model", "bge-small", "-embed-dims", "384", "-embed-window", "512",
+			},
 			check: func(t *testing.T, e embed.Embedder) {
 				h := e.(embed.HTTP)
-				if h.BaseURL != "http://192.168.1.5:8081/v1" || h.ModelName != "bge-small" || h.Dims() != 384 {
+				if h.BaseURL != "http://192.168.1.5:8081/v1" || h.ModelName != "bge-small" {
 					t.Errorf("embedder = %+v", h)
+				}
+				if h.Dims() != 384 || h.Window() != 512 {
+					t.Errorf("dims = %d, window = %d", h.Dims(), h.Window())
 				}
 			},
 		},
@@ -46,8 +67,8 @@ func TestEmbedderFlags(t *testing.T) {
 		{name: "off is accepted too", args: []string{"-embed", "off"}, wantNil: true},
 
 		{name: "an unknown backend", args: []string{"-embed", "magic"}, wantErr: "unknown embedding backend"},
-		{name: "http with no url", args: []string{"-embed-url", ""}, wantErr: "-embed-url is required"},
-		{name: "http with no model", args: []string{"-embed-model", ""}, wantErr: "-embed-model is required"},
+		{name: "http with no url", args: []string{"-embed", "http", "-embed-url", ""}, wantErr: "-embed-url is required"},
+		{name: "http with no model", args: []string{"-embed", "http", "-embed-model", ""}, wantErr: "-embed-model is required"},
 	}
 
 	for _, tc := range tests {
@@ -116,7 +137,7 @@ func TestReindexReportsAnUnreachableModel(t *testing.T) {
 		t.Fatalf("init: %v", err)
 	}
 
-	err := run([]string{"reindex", "-vault", root, "-embed-url", "http://127.0.0.1:1/v1"})
+	err := run([]string{"reindex", "-vault", root, "-embed", "http", "-embed-url", "http://127.0.0.1:1/v1"})
 	if err == nil {
 		t.Fatal("reindex succeeded against a closed port")
 	}

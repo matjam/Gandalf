@@ -40,19 +40,21 @@ type Chunk struct {
 	Hash string
 }
 
-// maxChunkRunes bounds a chunk so a long section still fits a small model's
-// context window. Sections longer than this are split on paragraph boundaries.
-const maxChunkRunes = 1200
-
-// Chunks splits a note into searchable pieces.
+// Chunks splits a note into searchable pieces that fit within budget runes.
+//
+// The budget comes from the embedding model rather than a constant, because
+// models differ by an order of magnitude — 256 tokens for a small sentence
+// encoder against 8192 for a larger one — and a chunk that overruns is
+// truncated silently, embedding the first half of a section as though it were
+// the whole thing.
 //
 // The maintained backlinks block is excluded: it is a list of other notes'
 // names, so indexing it would return this note for searches about them.
-func Chunks(ref, title string, note *vault.Note) []Chunk {
+func Chunks(ref, title string, note *vault.Note, budget int) []Chunk {
 	var out []Chunk
 
 	for _, section := range sections(note.Content()) {
-		for _, text := range split(section.text) {
+		for _, text := range split(section.text, budget) {
 			if strings.TrimSpace(text) == "" {
 				continue
 			}
@@ -115,9 +117,16 @@ func sections(body string) []section {
 	return out
 }
 
-// split breaks an over-long section on paragraph boundaries.
-func split(text string) []string {
-	if len([]rune(text)) <= maxChunkRunes {
+// split breaks an over-long section into pieces within budget.
+//
+// Paragraph boundaries are preferred, but a single paragraph longer than the
+// budget is cut anyway: leaving it whole would hand the model text it silently
+// truncates, which is worse than a chunk that ends mid-thought.
+func split(text string, budget int) []string {
+	if budget <= 0 {
+		budget = 1200
+	}
+	if len([]rune(text)) <= budget {
 		return []string{text}
 	}
 
@@ -127,19 +136,40 @@ func split(text string) []string {
 		size    int
 	)
 
-	for _, para := range strings.Split(text, "\n\n") {
-		n := len([]rune(para))
-		if size > 0 && size+n > maxChunkRunes {
+	flush := func() {
+		if len(current) > 0 {
 			out = append(out, strings.Join(current, "\n\n"))
 			current, size = nil, 0
 		}
-		current = append(current, para)
-		size += n
-	}
-	if len(current) > 0 {
-		out = append(out, strings.Join(current, "\n\n"))
 	}
 
+	for _, para := range strings.Split(text, "\n\n") {
+		for _, piece := range hardSplit(para, budget) {
+			n := len([]rune(piece))
+			if size > 0 && size+n > budget {
+				flush()
+			}
+			current = append(current, piece)
+			size += n
+		}
+	}
+	flush()
+
+	return out
+}
+
+// hardSplit cuts a paragraph that exceeds the budget on its own.
+func hardSplit(para string, budget int) []string {
+	runes := []rune(para)
+	if len(runes) <= budget {
+		return []string{para}
+	}
+
+	var out []string
+	for start := 0; start < len(runes); start += budget {
+		end := min(start+budget, len(runes))
+		out = append(out, string(runes[start:end]))
+	}
 	return out
 }
 

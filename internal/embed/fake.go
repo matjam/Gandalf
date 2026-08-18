@@ -19,6 +19,10 @@ const FakeModel = "fake-hashed-bag-of-words"
 type Fake struct {
 	// Dimensions is the vector length. Zero means the default.
 	Dimensions int
+
+	// Tokens is the window to claim, for tests that exercise chunking against
+	// a small model.
+	Tokens int
 }
 
 // Embed returns one vector per input.
@@ -39,6 +43,15 @@ func (f Fake) Dims() int {
 		return f.Dimensions
 	}
 	return 128
+}
+
+// Window is generous: the fake has no real limit, and a small one here would
+// make tests chunk differently from production for no reason.
+func (f Fake) Window() int {
+	if f.Tokens > 0 {
+		return f.Tokens
+	}
+	return 8192
 }
 
 // vector hashes each word into a bucket and counts them, then normalises so

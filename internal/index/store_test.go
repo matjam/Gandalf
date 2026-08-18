@@ -134,7 +134,7 @@ func TestChunks(t *testing.T) {
 		t.Fatalf("ParseNote: %v", err)
 	}
 
-	chunks := Chunks("standard:x", "Title", note)
+	chunks := Chunks("standard:x", "Title", note, embed.Budget(embed.Fake{}))
 	if len(chunks) != 3 {
 		t.Fatalf("got %d chunks, want 3: %+v", len(chunks), chunks)
 	}
@@ -159,7 +159,10 @@ func TestChunks(t *testing.T) {
 	}
 }
 
-func TestChunksSplitsLongSections(t *testing.T) {
+// TestChunksFitTheModelsWindow is why the window is part of the embedder
+// interface: a small model handed an oversized chunk truncates it silently,
+// embedding the start of a section as though it were the whole thing.
+func TestChunksFitTheModelsWindow(t *testing.T) {
 	var body strings.Builder
 	body.WriteString("---\ntype: standard\ncreated: 2026-08-17\nupdated: 2026-08-17\ntags: [standards]\nauthor: agent\n---\n\n# Long\n\n")
 	for range 40 {
@@ -172,13 +175,46 @@ func TestChunksSplitsLongSections(t *testing.T) {
 		t.Fatalf("ParseNote: %v", err)
 	}
 
-	chunks := Chunks("standard:long", "Long", note)
+	// A small sentence encoder against a larger model: the same note has to
+	// chunk differently for each.
+	small := embed.Budget(embed.Fake{Tokens: 256})
+	large := embed.Budget(embed.Fake{Tokens: 8192})
+
+	smallChunks := Chunks("standard:long", "Long", note, small)
+	largeChunks := Chunks("standard:long", "Long", note, large)
+
+	if len(smallChunks) <= len(largeChunks) {
+		t.Errorf("small window produced %d chunks and large produced %d; want more for the smaller model",
+			len(smallChunks), len(largeChunks))
+	}
+
+	for _, c := range smallChunks {
+		if n := len([]rune(c.Text)); n > small {
+			t.Errorf("chunk of %d runes exceeds the %d-rune budget", n, small)
+		}
+	}
+}
+
+// TestChunksSplitOversizedParagraphs covers text with no paragraph break to
+// split on, which would otherwise be handed over whole and truncated.
+func TestChunksSplitOversizedParagraphs(t *testing.T) {
+	body := "---\ntype: standard\ncreated: 2026-08-17\nupdated: 2026-08-17\ntags: [standards]\nauthor: agent\n---\n\n# Wall\n\n" +
+		strings.Repeat("unbroken ", 2000)
+
+	note, err := vault.ParseNote("Standards/wall.md", []byte(body))
+	if err != nil {
+		t.Fatalf("ParseNote: %v", err)
+	}
+
+	budget := embed.Budget(embed.Fake{Tokens: 256})
+	chunks := Chunks("standard:wall", "Wall", note, budget)
+
 	if len(chunks) < 2 {
-		t.Fatalf("a long section produced %d chunks, want it split", len(chunks))
+		t.Fatalf("a single long paragraph produced %d chunks", len(chunks))
 	}
 	for _, c := range chunks {
-		if n := len([]rune(c.Text)); n > maxChunkRunes+400 {
-			t.Errorf("chunk of %d runes is too long for a small model's window", n)
+		if n := len([]rune(c.Text)); n > budget {
+			t.Errorf("chunk of %d runes exceeds the %d-rune budget", n, budget)
 		}
 	}
 }
@@ -191,7 +227,7 @@ func TestChunksIgnoresHeadingsInCode(t *testing.T) {
 		t.Fatalf("ParseNote: %v", err)
 	}
 
-	chunks := Chunks("standard:x", "Title", note)
+	chunks := Chunks("standard:x", "Title", note, embed.Budget(embed.Fake{}))
 	if len(chunks) != 1 {
 		t.Errorf("got %d chunks, want 1: %+v", len(chunks), chunks)
 	}

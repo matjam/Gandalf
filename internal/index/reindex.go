@@ -44,6 +44,10 @@ func Reindex(ctx context.Context, v *vault.Vault, store *Store, embedder embed.E
 		return Report{}, err
 	}
 
+	// Chunks are sized for the model actually in use, so switching to one with
+	// a smaller window re-chunks rather than overrunning it.
+	budget := embed.Budget(embedder)
+
 	var report Report
 	present := map[string]bool{}
 
@@ -57,7 +61,7 @@ func Reindex(ctx context.Context, v *vault.Vault, store *Store, embedder embed.E
 			continue
 		}
 
-		chunks := Chunks(name(path), note.Title(), note)
+		chunks := Chunks(name(path), note.Title(), note, budget)
 		if len(chunks) == 0 {
 			if indexed[path] {
 				if err := store.Forget(path); err != nil {

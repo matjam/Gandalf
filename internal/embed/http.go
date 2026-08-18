@@ -28,6 +28,11 @@ type HTTP struct {
 	// producing an index that silently cannot be searched.
 	Dimensions int
 
+	// Tokens is the model's context window. It cannot be discovered over this
+	// API, so it is configured; too small merely costs extra chunks, while too
+	// large loses text to silent truncation at the far end.
+	Tokens int
+
 	// APIKey is sent as a bearer token when set. Local endpoints rarely need
 	// one.
 	APIKey string
@@ -41,6 +46,14 @@ func (h HTTP) Model() string { return h.ModelName }
 
 // Dims is the vector length.
 func (h HTTP) Dims() int { return h.Dimensions }
+
+// Window is the model's context window in tokens.
+func (h HTTP) Window() int {
+	if h.Tokens > 0 {
+		return h.Tokens
+	}
+	return 512
+}
 
 // embeddingRequest is the OpenAI-compatible request body.
 type embeddingRequest struct {

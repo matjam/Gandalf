@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/matjam/gandalf/internal/index"
+	"github.com/matjam/gandalf/internal/server"
 	"github.com/matjam/gandalf/internal/vault"
 )
 
@@ -44,8 +45,10 @@ func reindex(args []string) error {
 	}
 	defer store.Close()
 
+	// The same namer the tools use, so an index built here addresses notes the
+	// way a session will ask for them.
 	report, err := index.Reindex(context.Background(), v, store, embedder, func(path string) string {
-		return v.RefFor(path).String()
+		return server.CanonicalRef(v, path).String()
 	})
 	if err != nil {
 		return err

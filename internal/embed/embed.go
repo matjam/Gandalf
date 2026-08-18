@@ -29,6 +29,38 @@ type Embedder interface {
 
 	// Dims is the length of the vectors this embedder produces.
 	Dims() int
+
+	// Window is the most tokens the model accepts in one input.
+	//
+	// It is part of the interface because the alternative is silent
+	// truncation: a small model given a long chunk embeds the beginning and
+	// discards the rest, producing a vector that confidently represents half a
+	// section. Declaring the limit lets the caller split text to fit rather
+	// than find out by getting worse results.
+	Window() int
+}
+
+// RunesPerToken is the conversion used when turning a token window into a
+// character budget.
+//
+// English averages around four characters per token; three is deliberately
+// pessimistic, because overrunning the window loses text silently while
+// undershooting only costs an extra chunk.
+const RunesPerToken = 3
+
+// Budget returns how many runes of text fit in a model's window, leaving room
+// for the heading and title prepended to each chunk.
+func Budget(e Embedder) int {
+	window := e.Window()
+	if window <= 0 {
+		window = 512
+	}
+
+	budget := window * RunesPerToken * 4 / 5
+	if budget < 200 {
+		budget = 200
+	}
+	return budget
 }
 
 // Cosine returns the cosine similarity of two vectors, from -1 to 1.

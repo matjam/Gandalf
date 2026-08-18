@@ -3,9 +3,12 @@ package embed
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -223,6 +226,239 @@ func TestHTTPUnreachableExplainsItself(t *testing.T) {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error = %q, want it to mention %q", err, want)
 		}
+	}
+}
+
+// TestBudgetTracksTheWindow covers the conversion that keeps chunks inside a
+// model's context, where overrunning loses text silently.
+func TestBudgetTracksTheWindow(t *testing.T) {
+	tests := []struct {
+		name     string
+		embedder Embedder
+		check    func(*testing.T, int)
+	}{
+		{
+			name:     "a small sentence encoder",
+			embedder: Fake{Tokens: 256},
+			check: func(t *testing.T, budget int) {
+				if budget > 256*RunesPerToken {
+					t.Errorf("budget %d exceeds the window in characters", budget)
+				}
+				if budget < 200 {
+					t.Errorf("budget %d is too small to be useful", budget)
+				}
+			},
+		},
+		{
+			name:     "a large model",
+			embedder: Fake{Tokens: 8192},
+			check: func(t *testing.T, budget int) {
+				if budget <= Budget(Fake{Tokens: 256}) {
+					t.Error("a larger window did not produce a larger budget")
+				}
+			},
+		},
+		{
+			name:     "an unspecified window falls back to something safe",
+			embedder: Fake{Tokens: -1},
+			check: func(t *testing.T, budget int) {
+				if budget <= 0 {
+					t.Errorf("budget = %d", budget)
+				}
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.check(t, Budget(tc.embedder))
+		})
+	}
+}
+
+// TestLocalDescribesItself covers what the index depends on before any model
+// is downloaded: the vectors' shape and the window chunks are sized against.
+// Running the model needs a network fetch, so it is left to the end-to-end
+// checks rather than the test suite.
+func TestLocalDescribesItself(t *testing.T) {
+	l := NewLocal(t.TempDir())
+
+	if l.Model() != LocalModel {
+		t.Errorf("model = %q, want %q", l.Model(), LocalModel)
+	}
+	if l.Dims() != localDims {
+		t.Errorf("dims = %d, want %d", l.Dims(), localDims)
+	}
+	if l.Window() != localWindow {
+		t.Errorf("window = %d, want %d", l.Window(), localWindow)
+	}
+
+	// Constructing must not load anything: a session that never searches
+	// should never wait for a model.
+	if l.pipeline != nil || l.session != nil {
+		t.Error("the model was loaded before it was needed")
+	}
+
+	// No input means no work, and so no download.
+	vectors, err := l.Embed(context.Background(), nil)
+	if err != nil || vectors != nil {
+		t.Errorf("Embed(nil) = %v, %v; want no work and no error", vectors, err)
+	}
+	if l.pipeline != nil {
+		t.Error("an empty call loaded the model")
+	}
+
+	if err := l.Close(); err != nil {
+		t.Errorf("Close on an unloaded embedder: %v", err)
+	}
+}
+
+// TestLocalValidatesWhatTheModelReturns exercises the orchestration around the
+// model — validation, normalisation, error wrapping — with the model itself
+// stubbed, since running the real one needs a download.
+func TestLocalValidatesWhatTheModelReturns(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("vectors are normalised", func(t *testing.T) {
+		l := &Local{run: func(_ context.Context, texts []string) ([][]float32, error) {
+			out := make([][]float32, len(texts))
+			for i := range out {
+				// Unnormalised, and longer than unit length.
+				out[i] = make([]float32, localDims)
+				out[i][0] = 3
+				out[i][1] = 4
+			}
+			return out, nil
+		}}
+
+		vectors, err := l.Embed(ctx, []string{"one", "two"})
+		if err != nil {
+			t.Fatalf("Embed: %v", err)
+		}
+		if len(vectors) != 2 {
+			t.Fatalf("got %d vectors", len(vectors))
+		}
+		if got := Cosine(vectors[0], vectors[0]); math.Abs(got-1) > 1e-6 {
+			t.Errorf("self-similarity = %v, want 1", got)
+		}
+		if got := float64(vectors[0][0]); math.Abs(got-0.6) > 1e-6 {
+			t.Errorf("first component = %v, want the vector scaled to unit length", got)
+		}
+	})
+
+	tests := []struct {
+		name string
+		run  func(context.Context, []string) ([][]float32, error)
+		want string
+	}{
+		{
+			name: "a short batch",
+			run: func(_ context.Context, _ []string) ([][]float32, error) {
+				return [][]float32{make([]float32, localDims)}, nil
+			},
+			want: "1 embeddings for 2 inputs",
+		},
+		{
+			name: "the wrong dimensions",
+			run: func(_ context.Context, texts []string) ([][]float32, error) {
+				out := make([][]float32, len(texts))
+				for i := range out {
+					out[i] = make([]float32, 7)
+				}
+				return out, nil
+			},
+			want: "7 dimensions",
+		},
+		{
+			name: "the model failing",
+			run: func(_ context.Context, _ []string) ([][]float32, error) {
+				return nil, errStub
+			},
+			want: LocalModel,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			l := &Local{run: tc.run}
+
+			_, err := l.Embed(ctx, []string{"one", "two"})
+			if err == nil {
+				t.Fatalf("Embed() = nil, want an error mentioning %q", tc.want)
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("error = %q, want it to mention %q", err, tc.want)
+			}
+		})
+	}
+}
+
+// errStub stands in for a failure inside the model.
+var errStub = fmt.Errorf("model exploded")
+
+func TestLocalCacheDir(t *testing.T) {
+	t.Run("an explicit directory is created", func(t *testing.T) {
+		dir := filepath.Join(t.TempDir(), "models", "nested")
+
+		got, err := (&Local{Dir: dir}).cacheDir()
+		if err != nil {
+			t.Fatalf("cacheDir: %v", err)
+		}
+		if got != dir {
+			t.Errorf("cacheDir = %q, want %q", got, dir)
+		}
+		if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+			t.Errorf("directory was not created: %v", err)
+		}
+	})
+
+	t.Run("the default lives outside any vault", func(t *testing.T) {
+		got, err := (&Local{}).cacheDir()
+		if err != nil {
+			t.Fatalf("cacheDir: %v", err)
+		}
+		// The model is a shared artifact of this machine, not part of anyone's
+		// notes, so it must not land in a vault.
+		if !strings.Contains(got, "gandalf") {
+			t.Errorf("cacheDir = %q, want it under a gandalf directory", got)
+		}
+		if strings.Contains(got, ".gandalf") {
+			t.Errorf("cacheDir = %q, which is inside a vault", got)
+		}
+	})
+}
+
+// TestEmbeddersDescribeThemselves covers the accessors the index relies on to
+// decide whether a stored vector is comparable with a fresh one.
+func TestEmbeddersDescribeThemselves(t *testing.T) {
+	embedders := []Embedder{
+		Fake{},
+		Fake{Dimensions: 64, Tokens: 256},
+		HTTP{ModelName: "nomic-embed-text", Dimensions: 768, Tokens: 8192},
+		NewLocal(t.TempDir()),
+	}
+
+	for _, e := range embedders {
+		t.Run(e.Model(), func(t *testing.T) {
+			if e.Model() == "" {
+				t.Error("no model name, so a changed model could not be detected")
+			}
+			if e.Dims() <= 0 {
+				t.Errorf("dims = %d", e.Dims())
+			}
+			if Budget(e) <= 0 {
+				t.Errorf("budget = %d", Budget(e))
+			}
+		})
+	}
+}
+
+func TestHTTPWindow(t *testing.T) {
+	if got := (HTTP{}).Window(); got != 512 {
+		t.Errorf("default window = %d, want a conservative 512", got)
+	}
+	if got := (HTTP{Tokens: 8192}).Window(); got != 8192 {
+		t.Errorf("configured window = %d", got)
 	}
 }
 
