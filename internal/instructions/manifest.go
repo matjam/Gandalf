@@ -210,6 +210,7 @@ var docs = []Doc{
 
 	{
 		ID:      "readme-root",
+		NoIndex: true,
 		Source:  "content/readme/root.md",
 		Path:    "README.md",
 		Title:   "Vault",
@@ -221,6 +222,7 @@ var docs = []Doc{
 	},
 	{
 		ID:      "readme-sessions",
+		NoIndex: true,
 		Source:  "content/readme/sessions.md",
 		Path:    "Sessions/README.md",
 		Title:   "Sessions",
@@ -232,6 +234,7 @@ var docs = []Doc{
 	},
 	{
 		ID:      "readme-projects",
+		NoIndex: true,
 		Source:  "content/readme/projects.md",
 		Path:    "Projects/README.md",
 		Title:   "Projects",
@@ -243,6 +246,7 @@ var docs = []Doc{
 	},
 	{
 		ID:      "readme-standards",
+		NoIndex: true,
 		Source:  "content/readme/standards.md",
 		Path:    "Standards/README.md",
 		Title:   "Standards",

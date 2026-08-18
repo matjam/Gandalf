@@ -40,6 +40,11 @@ type Frontmatter struct {
 	Author  Author
 	Status  Status // optional
 
+	// Index controls whether the note is added to the search index. Nil means
+	// it is: a note is searchable unless something says otherwise, so the flag
+	// only ever appears on notes deliberately kept out.
+	Index *bool
+
 	// Extra holds frontmatter keys Gandalf does not manage, such as Obsidian's
 	// aliases or cssclasses. They are preserved verbatim on write so the tool
 	// never destroys metadata it did not create.

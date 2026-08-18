@@ -61,7 +61,13 @@ func Reindex(ctx context.Context, v *vault.Vault, store *Store, embedder embed.E
 			continue
 		}
 
-		chunks := Chunks(name(path), note.Title(), note, budget)
+		// A note excluded after it was indexed has to be removed, not merely
+		// skipped, or the flag would only apply to notes written after it.
+		var chunks []Chunk
+		if note.Indexed() {
+			chunks = Chunks(name(path), note.Title(), note, budget)
+		}
+
 		if len(chunks) == 0 {
 			if indexed[path] {
 				if err := store.Forget(path); err != nil {

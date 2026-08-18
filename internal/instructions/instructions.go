@@ -77,6 +77,14 @@ type Doc struct {
 	// boot payload's topic table shows, so it is written for a reader deciding
 	// whether to spend a tool call.
 	When string
+
+	// NoIndex keeps the document out of the search index.
+	//
+	// Folder READMEs orient a human opening the vault. Left searchable, they
+	// compete with the operating contract for a model's attention and win: a
+	// question about how the vault is arranged matches the document describing
+	// the folders rather than the one describing the protocol.
+	NoIndex bool
 }
 
 // Body returns the document's shipped content.

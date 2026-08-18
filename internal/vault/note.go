@@ -87,6 +87,11 @@ func (n *Note) Render() []byte {
 	writeRelated(&b, n.FM.Related)
 	writeScalar(&b, "author", string(n.FM.Author))
 	writeScalar(&b, "status", string(n.FM.Status))
+	// Only written when a note is deliberately kept out of the index, so the
+	// common case carries no extra key.
+	if n.FM.Index != nil && !*n.FM.Index {
+		b.WriteString("index: false\n")
+	}
 	writeExtra(&b, n.FM.Extra)
 	b.WriteString(fence + "\n\n")
 
@@ -138,6 +143,12 @@ func (n *Note) Append(heading, content string) {
 	}
 
 	n.Body = b.String()
+}
+
+// Indexed reports whether the note belongs in the search index. Notes are
+// searchable unless their frontmatter says otherwise.
+func (n *Note) Indexed() bool {
+	return n.FM.Index == nil || *n.FM.Index
 }
 
 // Title returns the note's first level-one heading, or the empty string when

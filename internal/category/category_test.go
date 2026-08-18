@@ -215,6 +215,13 @@ func TestOwnerRejectsUnconventionalPaths(t *testing.T) {
 		"Sessions/2026/08/no-date-prefix.md",
 		"Projects/gandalf/Extra Notes.md",
 		"Standards/nested/deeper.md",
+
+		// A folder's README describes the folder rather than being a note of
+		// the kind it holds. Standards/README.md answering to standard:README
+		// would dress a folder description as an engineering standard.
+		"Standards/README.md",
+		"Sessions/README.md",
+		"Projects/README.md",
 	} {
 		t.Run(notePath, func(t *testing.T) {
 			if cat, _, _, ok := set.Owner(notePath); ok {

@@ -15,6 +15,7 @@ import (
 var managedKeys = map[string]bool{
 	"type": true, "created": true, "updated": true,
 	"tags": true, "related": true, "author": true, "status": true,
+	"index": true,
 }
 
 // parseFrontmatter decodes a YAML frontmatter block into typed frontmatter.
@@ -77,6 +78,15 @@ func parseFrontmatter(block string) (schema.Frontmatter, []schema.Issue, error) 
 			continue
 		}
 		*f.dest = d
+	}
+
+	if v, ok := raw["index"]; ok {
+		switch b := v.(type) {
+		case bool:
+			fm.Index = &b
+		default:
+			bad("index", "expected true or false, got %s", yamlKind(v))
+		}
 	}
 
 	if v, ok := raw["tags"]; ok {

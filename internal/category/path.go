@@ -95,6 +95,14 @@ func (c Category) Owns(notePath string) (scope, name string, ok bool) {
 	base := strings.TrimSuffix(path.Base(clean), path.Ext(clean))
 	dir := path.Dir(clean)
 
+	// A folder's README describes the folder; it is not a note of whatever
+	// kind the folder holds. Without this, Standards/README.md answers to
+	// standard:README — a folder description dressed as an engineering
+	// standard.
+	if strings.EqualFold(base, "README") {
+		return "", "", false
+	}
+
 	switch c.Rule {
 	case RuleSingleton:
 		return "", "", clean == path.Clean(c.Folder)

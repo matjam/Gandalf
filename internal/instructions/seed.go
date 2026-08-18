@@ -159,6 +159,11 @@ func build(v *vault.Vault, doc Doc, on schema.Date) (*vault.Note, error) {
 		KeySeed:    HashBody(body),
 	}
 
+	if doc.NoIndex {
+		excluded := false
+		note.FM.Index = &excluded
+	}
+
 	return note, nil
 }
 
