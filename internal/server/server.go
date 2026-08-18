@@ -95,6 +95,30 @@ func (s *Server) MCP() *sdk.Server {
 	}, s.noteUpdate)
 
 	sdk.AddTool(srv, &sdk.Tool{
+		Name: "gandalf_category_list",
+		Description: "List the kinds of note this vault holds, how each is filed, and how " +
+			"its notes are addressed. Check here before creating a note of an unfamiliar kind.",
+	}, s.categoryList)
+
+	sdk.AddTool(srv, &sdk.Tool{
+		Name: "gandalf_category_create",
+		Description: "Declare a new kind of note, when what the user is keeping does not fit " +
+			"the kinds that exist. A design decision, not a routine one: ask first.",
+	}, s.categoryCreate)
+
+	sdk.AddTool(srv, &sdk.Tool{
+		Name: "gandalf_category_retire",
+		Description: "Stop new notes being filed under a category, leaving the ones already " +
+			"there readable and writable.",
+	}, s.categoryRetire)
+
+	sdk.AddTool(srv, &sdk.Tool{
+		Name: "gandalf_category_delete",
+		Description: "Remove a category entirely. Only works when it holds no notes; retire " +
+			"it instead if it does.",
+	}, s.categoryDelete)
+
+	sdk.AddTool(srv, &sdk.Tool{
 		Name: "gandalf_lint",
 		Description: "Validate note metadata and links, for one note or the whole vault. " +
 			"Reports are addressed by ref.",
