@@ -129,11 +129,42 @@ The index lives in `.gandalf/`, is excluded from git by a seeded ignore file, an
 is rebuilt from the notes whenever it disagrees with them. Changing model rebuilds
 it rather than comparing incompatible vectors.
 
+## Importing an existing vault
+
+If you already keep markdown notes, `gandalf import` moves them in — preserving
+each note's original dates and rewriting every link to its new home.
+
+```
+gandalf import -from ~/Documents/Vaults/Old -vault ~/Documents/Vaults/Gandalf
+```
+
+That prints a plan and writes nothing. Add `-apply` once it looks right.
+
+Notes are mapped by rules, or by their own frontmatter type when no rule
+matches. A rules file maps source paths onto categories, where `*` captures one
+path segment and `**` any number:
+
+```json
+{
+  "rules": [
+    { "match": "Apps/*/Design.md", "category": "project", "scope": "$1", "facet": "design" },
+    { "match": "Sessions/**", "category": "session" },
+    { "match": "**/README.md", "skip": true }
+  ]
+}
+```
+
+See [examples/agentos-import.json](examples/agentos-import.json) for a complete
+set. The importer never overwrites: anything already in the destination is
+reported as a conflict and left alone, as are links whose targets were not part
+of the import. Run `gandalf lint` afterwards to see what still needs attention.
+
 ## Commands
 
 ```
 gandalf serve   -vault DIR [-no-seed] [embedding flags]
 gandalf init    [-vault DIR] [-restore]
+gandalf import  -from DIR [-vault DIR] [-rules FILE] [-apply]
 gandalf reindex [-vault DIR] [embedding flags]
 gandalf doctor  [-vault DIR]
 gandalf lint    [-vault DIR] [-strict] [NOTE...]
@@ -148,6 +179,9 @@ reads. Divergence is what happens when the vault is working.
 
 `lint` validates metadata, links, and backlinks. Exits non-zero on errors, or on
 warnings with `-strict`.
+
+`import` moves an existing vault in, preserving dates and rewriting links. It plans
+first and writes nothing without `-apply`.
 
 `reindex` builds the search index up front rather than on the first search.
 
