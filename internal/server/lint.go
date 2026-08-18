@@ -77,7 +77,19 @@ type CorrectInput struct {
 	Guidance string `json:"guidance" jsonschema:"the rule, stated as an instruction to follow in future"`
 
 	Reason string `json:"reason,omitempty" jsonschema:"what prompted the correction; recorded in the correction history, not in the rule"`
+
+	Section string `json:"section,omitempty" jsonschema:"heading to file the rule under; defaults to Recorded Corrections. Name the section the rule actually belongs to when you know it"`
 }
+
+// CorrectionsSection is where a recorded correction lands when the caller does
+// not name a section.
+//
+// A correction has to go somewhere predictable. Appending it to the end of the
+// document files it under whatever heading is last, which is how a rule about
+// repository layout ends up reading as part of the session checklist. A
+// dedicated heading is honest about what it holds: rules that are in force but
+// have not yet been worked into the prose around them.
+const CorrectionsSection = "Recorded Corrections"
 
 // CorrectOutput reports where the correction went.
 type CorrectOutput struct {
@@ -111,7 +123,14 @@ func (s *Server) correct(ctx context.Context, _ *sdk.CallToolRequest, in Correct
 	if err != nil {
 		return nil, CorrectOutput{}, err
 	}
-	note.Append("", fmt.Sprintf("- %s", in.Guidance))
+
+	section := strings.TrimSpace(in.Section)
+	if section == "" {
+		section = CorrectionsSection
+	}
+	if err := note.AppendToSection(section, fmt.Sprintf("- %s", in.Guidance)); err != nil {
+		return nil, CorrectOutput{}, fmt.Errorf("record correction in %s: %w", ref, err)
+	}
 	note.Touch(schema.Today())
 
 	if err := s.write(note); err != nil {

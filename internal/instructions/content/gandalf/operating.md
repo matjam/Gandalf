@@ -109,6 +109,12 @@ harness configuration files:
 Pass the rule as `guidance` and what prompted it as `reason`. The rule goes in the
 document, the reason in the correction history, which is not read at startup.
 
+A recorded rule lands under `## Recorded Corrections` unless you name a `section`.
+Name one when you know where the rule belongs — a rule about verification belongs in
+the verification section, not in a bucket at the foot of the page. The bucket is for
+rules that are in force but have not been worked into the prose around them yet;
+moving one into place later is ordinary editing.
+
 Add only what is new. Prefer stating what to do over what not to do. Do not duplicate
 a rule across files.
 

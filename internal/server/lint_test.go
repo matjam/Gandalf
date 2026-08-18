@@ -177,3 +177,93 @@ func TestCorrectionSurvivesReseeding(t *testing.T) {
 		t.Error("re-seeding reverted a correction")
 	}
 }
+
+// TestCorrectFilesUnderItsOwnHeading pins the placement of a recorded rule.
+//
+// A correction used to be appended to the end of the document, which filed it
+// under whatever heading happened to be last — in the shipped contract, the
+// session checklist. The rule was then read as part of a section it had
+// nothing to do with.
+func TestCorrectFilesUnderItsOwnHeading(t *testing.T) {
+	h := newHarness(t)
+
+	const guidance = "Keep personal projects outside the work source tree."
+
+	h.call("gandalf_correct", CorrectInput{Guidance: guidance}, nil)
+
+	var contract NoteOutput
+	h.call("gandalf_note_read", NoteReadInput{Ref: "topic:operating"}, &contract)
+
+	heading := "## " + CorrectionsSection
+	at := strings.Index(contract.Content, heading)
+	if at < 0 {
+		t.Fatalf("no %q section was created", heading)
+	}
+
+	rule := strings.Index(contract.Content, guidance)
+	if rule < at {
+		t.Error("the rule was written above its own heading")
+	}
+
+	// Everything the document already said must still be above the new
+	// section: a correction adds to the contract, it does not reorganise it.
+	if last := strings.LastIndex(contract.Content[:at], "## "); last < 0 {
+		t.Error("the corrections section displaced the document's own headings")
+	}
+
+	// A second correction joins the first rather than starting a new section.
+	const second = "Say what you verified, not what you assume."
+	h.call("gandalf_correct", CorrectInput{Guidance: second}, nil)
+
+	h.call("gandalf_note_read", NoteReadInput{Ref: "topic:operating"}, &contract)
+
+	// Count heading lines, not substrings: the contract names the section in
+	// its own prose, and an inline mention is not a second section.
+	var sections int
+	for _, line := range strings.Split(contract.Content, "\n") {
+		if strings.TrimSpace(line) == heading {
+			sections++
+		}
+	}
+	if sections != 1 {
+		t.Errorf("%d corrections sections, want 1", sections)
+	}
+	if !strings.Contains(contract.Content, guidance) || !strings.Contains(contract.Content, second) {
+		t.Error("a second correction displaced the first")
+	}
+}
+
+// TestCorrectHonoursAnExplicitSection lets a caller that knows where a rule
+// belongs put it there, rather than in the catch-all.
+func TestCorrectHonoursAnExplicitSection(t *testing.T) {
+	h := newHarness(t)
+
+	const guidance = "Run the race detector in CI."
+
+	h.call("gandalf_correct", CorrectInput{
+		Target:   "topic:shipping",
+		Guidance: guidance,
+		Section:  "Verification",
+	}, nil)
+
+	var topic NoteOutput
+	h.call("gandalf_note_read", NoteReadInput{Ref: "topic:shipping"}, &topic)
+
+	if strings.Contains(topic.Content, CorrectionsSection) {
+		t.Error("an explicit section was ignored in favour of the catch-all")
+	}
+
+	verification := strings.Index(topic.Content, "## Verification")
+	rule := strings.Index(topic.Content, guidance)
+	if verification < 0 || rule < verification {
+		t.Fatal("the rule was not filed under the named section")
+	}
+
+	// It has to land inside that section, not merely after its heading: the
+	// next heading down marks where the section ends.
+	if next := strings.Index(topic.Content[verification+len("## Verification"):], "\n## "); next >= 0 {
+		if rule > verification+len("## Verification")+next {
+			t.Error("the rule landed past the end of the named section")
+		}
+	}
+}

@@ -158,6 +158,60 @@ func (n *Note) Append(heading, content string) {
 	n.Body = b.String()
 }
 
+// AppendToSection adds content to the end of one named section, creating that
+// section at the foot of the body when the note does not already have it.
+//
+// Plain Append puts its content after everything, which means it lands under
+// whichever heading happens to be last. That is fine for a chronological note,
+// where the end is where new material belongs, and wrong for a document
+// organised by subject: a rule appended to the operating contract would file
+// itself under the contract's closing section and read as part of it. Naming
+// the section makes placement a decision rather than an accident of layout.
+//
+// An ambiguous heading is refused rather than guessed at, matching the
+// replacement path: two sections with the same name give no basis for choosing
+// one.
+func (n *Note) AppendToSection(heading, content string) error {
+	heading = strings.TrimSpace(heading)
+	if heading == "" {
+		return fmt.Errorf("appending to a section needs a heading")
+	}
+	if strings.EqualFold(strings.TrimLeft(heading, "# "), backlinksTitle) {
+		return fmt.Errorf("%w and cannot be appended to", ErrBacklinksProtected)
+	}
+
+	body := n.Content()
+	found := headings(body)
+
+	matches := matchHeadings(found, heading)
+	if len(matches) > 1 {
+		return fmt.Errorf("%w: %q matches %d headings", ErrSectionAmbiguous, heading, len(matches))
+	}
+	if len(matches) == 0 {
+		n.Append(heading, content)
+		return nil
+	}
+
+	lines := strings.Split(body, "\n")
+	_, end := sectionSpan(len(lines), found, matches[0])
+
+	// Trailing blank lines belong to the gap before the next heading, not to
+	// the section, so step back over them before inserting. Otherwise every
+	// addition pushes the section further from its own heading.
+	at := end
+	for at > matches[0].line+1 && strings.TrimSpace(lines[at-1]) == "" {
+		at--
+	}
+
+	rebuilt := make([]string, 0, len(lines)+3)
+	rebuilt = append(rebuilt, lines[:at]...)
+	rebuilt = append(rebuilt, "", strings.TrimSpace(content))
+	rebuilt = append(rebuilt, lines[at:]...)
+
+	n.setContent(strings.Join(rebuilt, "\n"))
+	return nil
+}
+
 // Indexed reports whether the note belongs in the search index. Notes are
 // searchable unless their frontmatter says otherwise.
 func (n *Note) Indexed() bool {

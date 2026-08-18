@@ -247,3 +247,71 @@ func mustDate(t *testing.T, s string) schema.Date {
 	}
 	return d
 }
+
+// TestAppendToSectionCreatesAndReuses covers the two shapes of a section
+// append: the section is missing, and the section is already there.
+func TestAppendToSectionCreatesAndReuses(t *testing.T) {
+	n := &Note{Body: "# Doc\n\n## First\n\nAlpha.\n\n## Last\n\nOmega.\n"}
+
+	if err := n.AppendToSection("Rules", "- one"); err != nil {
+		t.Fatalf("AppendToSection: %v", err)
+	}
+	if !strings.Contains(n.Body, "## Rules") {
+		t.Fatal("the section was not created")
+	}
+	if strings.Index(n.Body, "## Rules") < strings.Index(n.Body, "## Last") {
+		t.Error("a new section should go at the foot, not above existing ones")
+	}
+
+	if err := n.AppendToSection("Rules", "- two"); err != nil {
+		t.Fatalf("AppendToSection: %v", err)
+	}
+	if got := strings.Count(n.Body, "## Rules"); got != 1 {
+		t.Errorf("%d Rules sections, want 1", got)
+	}
+	if strings.Index(n.Body, "- one") > strings.Index(n.Body, "- two") {
+		t.Error("appends should keep their order")
+	}
+
+	// Adding to a section in the middle must not spill into the next one.
+	if err := n.AppendToSection("First", "Beta."); err != nil {
+		t.Fatalf("AppendToSection: %v", err)
+	}
+	beta, last := strings.Index(n.Body, "Beta."), strings.Index(n.Body, "## Last")
+	if beta < 0 || beta > last {
+		t.Error("content landed outside the section it named")
+	}
+	if !strings.Contains(n.Body, "Alpha.") {
+		t.Error("appending to a section overwrote what it held")
+	}
+}
+
+// TestAppendToSectionKeepsBacklinksLast guards the maintained block: an append
+// that lands below it would be destroyed on the next rebuild.
+func TestAppendToSectionKeepsBacklinksLast(t *testing.T) {
+	n := &Note{Body: "# Doc\n\n## Rules\n\n- one\n\n" + BacklinksHeading + "\n\n- [[other]]\n"}
+
+	if err := n.AppendToSection("Rules", "- two"); err != nil {
+		t.Fatalf("AppendToSection: %v", err)
+	}
+	if strings.Index(n.Body, "- two") > strings.Index(n.Body, BacklinksHeading) {
+		t.Error("the append landed below the maintained block")
+	}
+
+	if err := n.AppendToSection("Backlinks", "- [[forged]]"); err == nil {
+		t.Error("appending to the maintained block should be refused")
+	}
+}
+
+// TestAppendToSectionRefusesAmbiguity matches the replacement path: two
+// sections with one name give no basis for choosing between them.
+func TestAppendToSectionRefusesAmbiguity(t *testing.T) {
+	n := &Note{Body: "# Doc\n\n## Notes\n\nA.\n\n## Other\n\nB.\n\n## Notes\n\nC.\n"}
+
+	if err := n.AppendToSection("Notes", "D."); err == nil {
+		t.Error("an ambiguous heading should be refused")
+	}
+	if err := n.AppendToSection("", "D."); err == nil {
+		t.Error("an empty heading should be refused")
+	}
+}
