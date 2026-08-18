@@ -55,7 +55,11 @@ Read-only work creates no notes. Read freely, write nothing.
 ## Finding and Writing
 
 - `gandalf_search` finds notes by meaning rather than wording. Use it when you know the
-  subject but not how it was written down.
+  subject but not how it was written down. `gandalf_boot` reports whether its index is
+  ready, still building, or unavailable, and every search result says the same. A search
+  answered while the index is still building is a partial answer: it can miss a note
+  that exists, so confirm with `gandalf_list` before concluding the vault is silent on
+  something.
 - `gandalf_list` enumerates the vault by category, returning refs and titles but no
   content. Use it when you know what you want by name.
 - `gandalf_note_read` reads a note, or one of the operating topics, by ref. Search and

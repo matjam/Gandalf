@@ -72,6 +72,16 @@ func importVault(args []string) error {
 		fmt.Println("run `gandalf lint` to see which notes still reference them in prose")
 	}
 
+	// An import is the one moment that reliably creates a large cold index.
+	// The server builds it in the background on the next start, but doing it
+	// here means the first search of the next session is instant rather than
+	// partial.
+	if result.Imported > 0 {
+		fmt.Printf("run `gandalf reindex` to embed the imported notes now, "+
+			"or let the next `gandalf serve` build the index in the background (%d note(s) to embed)\n",
+			result.Imported)
+	}
+
 	commitVault(dst, fmt.Sprintf("gandalf: import %d note(s)", result.Imported))
 	return nil
 }

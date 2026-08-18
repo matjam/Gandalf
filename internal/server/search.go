@@ -39,6 +39,11 @@ type SearchOutput struct {
 	// Indexed reports notes brought up to date before searching, so a caller
 	// can see when results reflect edits made moments ago.
 	Indexed int `json:"notes_indexed,omitempty"`
+
+	// Index says whether the results are complete. A search against a vault
+	// still being indexed is answered from what has landed so far, and saying
+	// so is the difference between "no such note" and "not yet indexed".
+	Index IndexStatus `json:"index"`
 }
 
 // searcher holds the index and the embedder behind it, built on first use.
@@ -62,19 +67,30 @@ func (s *Server) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchIn
 				"or use gandalf_list and gandalf_lint to find notes by name")
 	}
 
+	// Wait for the background pass, but only so long. A cold vault takes
+	// minutes to embed, and a search that never returns is worse than one that
+	// returns what exists so far and says the index is still building.
+	s.awaitIndex(ctx)
+
 	store, err := s.index()
 	if err != nil {
 		return nil, SearchOutput{}, err
 	}
 
-	// Reindexing before searching keeps results honest at the cost of reading
-	// the vault: unchanged notes are skipped by fingerprint, so the usual case
-	// is cheap and a note written a moment ago is findable.
-	report, err := index.Reindex(ctx, s.vault, store, s.embedder, func(path string) string {
-		return s.canonical(path).String()
-	})
-	if err != nil {
-		return nil, SearchOutput{}, err
+	status := s.indexStatus()
+
+	// Once the first pass is done, a freshness pass before searching is cheap:
+	// unchanged notes are skipped by fingerprint, so a note written a moment
+	// ago is findable without re-embedding the vault. While the first pass is
+	// still running, the background goroutine already owns that work.
+	var report index.Report
+	if status.State == IndexReady {
+		report, err = index.Reindex(ctx, s.vault, store, s.embedder, func(path string) string {
+			return s.canonical(path).String()
+		})
+		if err != nil {
+			return nil, SearchOutput{}, err
+		}
 	}
 
 	results, err := store.Search(ctx, s.embedder, index.Query{
@@ -89,6 +105,7 @@ func (s *Server) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchIn
 	out := SearchOutput{
 		Hits:    make([]SearchHit, 0, len(results)),
 		Indexed: report.Indexed,
+		Index:   status,
 	}
 	for _, r := range results {
 		out.Hits = append(out.Hits, SearchHit{

@@ -28,15 +28,37 @@ type Report struct {
 // itself.
 type Namer func(path string) string
 
+// Progress reports how far a reindex has got. It is called after each note is
+// considered, whether or not that note needed embedding, so a caller can show
+// movement through a vault where most notes are already current.
+type Progress func(done, total int)
+
 // Reindex brings the index into line with the vault.
 //
 // Work is skipped per note by comparing chunk fingerprints, because embedding
 // is the expensive part and most notes are unchanged between runs. A note whose
 // text is identical costs one read.
 func Reindex(ctx context.Context, v *vault.Vault, store *Store, embedder embed.Embedder, name Namer) (Report, error) {
+	return ReindexWith(ctx, v, store, embedder, name, nil)
+}
+
+// ReindexWith is Reindex with progress reporting.
+//
+// A first index of a large vault is minutes of embedding, and a caller that
+// cannot see how far along it is has no way to tell slow from stuck.
+func ReindexWith(ctx context.Context, v *vault.Vault, store *Store, embedder embed.Embedder, name Namer, onProgress Progress) (Report, error) {
 	paths, err := v.List()
 	if err != nil {
 		return Report{}, err
+	}
+
+	total := len(paths)
+	done := 0
+	step := func() {
+		done++
+		if onProgress != nil {
+			onProgress(done, total)
+		}
 	}
 
 	indexed, err := store.Paths()
@@ -54,10 +76,18 @@ func Reindex(ctx context.Context, v *vault.Vault, store *Store, embedder embed.E
 	for _, path := range paths {
 		present[path] = true
 
+		// A cancelled reindex stops where it is rather than running to the end
+		// of the vault. What it already wrote stays valid: the next run picks
+		// up from there, because freshness is decided per note.
+		if err := ctx.Err(); err != nil {
+			return report, err
+		}
+
 		note, err := v.Read(path)
 		if err != nil {
 			// A note too broken to parse is lint's business; leaving it out of
 			// the index is better than failing the whole run.
+			step()
 			continue
 		}
 
@@ -74,6 +104,7 @@ func Reindex(ctx context.Context, v *vault.Vault, store *Store, embedder embed.E
 					return Report{}, err
 				}
 			}
+			step()
 			continue
 		}
 
@@ -83,6 +114,7 @@ func Reindex(ctx context.Context, v *vault.Vault, store *Store, embedder embed.E
 		}
 		if fresh {
 			report.Unchanged++
+			step()
 			continue
 		}
 
@@ -103,6 +135,7 @@ func Reindex(ctx context.Context, v *vault.Vault, store *Store, embedder embed.E
 			return Report{}, err
 		}
 		report.Indexed++
+		step()
 	}
 
 	for path := range indexed {

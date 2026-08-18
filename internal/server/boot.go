@@ -47,6 +47,11 @@ type BootOutput struct {
 	OpenToday  []OpenSession  `json:"open_sessions_today"`
 	Notices    []string       `json:"notices,omitempty"`
 	Addressing string         `json:"addressing"`
+
+	// Search says whether the search index is usable yet. Boot is where a
+	// session decides how it will find prior work, and that decision is wrong
+	// if it assumes a capability that is still warming up or absent.
+	Search IndexStatus `json:"search"`
 }
 
 // boot returns the operating contract, the topics available on demand, and
@@ -57,9 +62,15 @@ type BootOutput struct {
 // shipped text with a notice, which is more useful than a session with no
 // contract at all.
 func (s *Server) boot(ctx context.Context, _ *sdk.CallToolRequest, _ BootInput) (*sdk.CallToolResult, BootOutput, error) {
+	// Boot is the first call of a session, which makes it the right moment to
+	// start indexing: the work happens while the model is reading the contract
+	// rather than when it first tries to search.
+	s.startIndexing(context.WithoutCancel(ctx))
+
 	out := BootOutput{
 		Vault:   s.vault.Root(),
 		Version: instructions.Version,
+		Search:  s.indexStatus(),
 		Addressing: "Notes are addressed by ref, never by path: session:<date-slug>, " +
 			"project:<name>:<design|decisions|todo>, standard:<name>, topic:<name>, glossary. " +
 			"Refs come from these tools; do not construct file paths.",

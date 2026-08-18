@@ -40,6 +40,10 @@ type Server struct {
 	embedder embed.Embedder
 	searcher searcher
 
+	// indexer runs the first index pass in the background, so a cold vault
+	// does not turn the first search into a stall of unknown length.
+	indexer *indexer
+
 	// read records which notes have been read during this connection, so a
 	// replacement cannot be aimed at text the caller has not seen. It is
 	// deliberately not persisted: a restarted process has forgotten what the
@@ -73,7 +77,7 @@ func (s *Server) hasRead(ref vault.Ref) bool {
 
 // New returns a server over the given vault, without search.
 func New(v *vault.Vault, version string) *Server {
-	return &Server{vault: v, name: "gandalf", version: version}
+	return &Server{vault: v, name: "gandalf", version: version, indexer: newIndexer()}
 }
 
 // WithSearch returns a server that can also search, using the given embedder.
@@ -234,6 +238,11 @@ func (s *Server) MCP() *sdk.Server {
 
 // Run serves over stdio until the client disconnects or ctx is cancelled.
 func (s *Server) Run(ctx context.Context) error {
+	// Start indexing as the server comes up rather than on the first search.
+	// The cost is the same either way; paying it in the background means the
+	// session is not blocked on it, and gandalf_boot can say how far it got.
+	s.startIndexing(ctx)
+
 	if err := s.MCP().Run(ctx, &sdk.StdioTransport{}); err != nil {
 		return fmt.Errorf("serve: %w", err)
 	}
