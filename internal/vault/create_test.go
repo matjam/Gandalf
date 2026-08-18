@@ -167,12 +167,19 @@ func TestEveryTypeProducesAValidNote(t *testing.T) {
 
 	for _, ty := range schema.NoteTypes() {
 		t.Run(string(ty), func(t *testing.T) {
-			n, err := v.NewNote(NewNoteRequest{
+			req := NewNoteRequest{
 				Type:  ty,
 				Title: "Example Note",
 				Scope: "example",
 				Tags:  []string{"example"},
-			})
+			}
+			// A README is filed by the folder it documents, so the layout
+			// cannot route it.
+			if ty == schema.TypeReadme {
+				req.Path = "example/README.md"
+			}
+
+			n, err := v.NewNote(req)
 			if err != nil {
 				t.Fatalf("NewNote: %v", err)
 			}

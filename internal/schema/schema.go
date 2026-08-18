@@ -22,13 +22,14 @@ const (
 	TypeGlossary  NoteType = "glossary"
 	TypeMeeting   NoteType = "meeting"
 	TypeInterview NoteType = "interview"
+	TypeReadme    NoteType = "readme"
 )
 
 // NoteTypes returns every valid note type.
 func NoteTypes() []NoteType {
 	return []NoteType{
 		TypeSession, TypeDesign, TypeDecisions, TypeStandard,
-		TypeGlossary, TypeMeeting, TypeInterview,
+		TypeGlossary, TypeMeeting, TypeInterview, TypeReadme,
 	}
 }
 

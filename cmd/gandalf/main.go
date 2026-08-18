@@ -1,17 +1,13 @@
 // Command gandalf manages an Obsidian-compatible markdown vault: it owns note
-// metadata so agents do not have to, and validates what is already there.
+// metadata so agents do not have to, seeds the GandalfOS instruction set into
+// a vault, and validates what is already there.
 //
-// The MCP server that exposes these operations to an agent is not built yet;
-// for now the lint subcommand runs the same checks from a shell.
+// The MCP server that exposes these operations to an agent is not built yet.
 package main
 
 import (
-	"flag"
 	"fmt"
 	"os"
-
-	"github.com/matjam/gandalf/internal/schema"
-	"github.com/matjam/gandalf/internal/vault"
 )
 
 func main() {
@@ -30,6 +26,10 @@ func run(args []string) error {
 	}
 
 	switch cmd := args[0]; cmd {
+	case "init":
+		return initVault(args[1:])
+	case "doctor":
+		return doctor(args[1:])
 	case "lint":
 		return lint(args[1:])
 	case "help", "-h", "--help":
@@ -41,54 +41,18 @@ func run(args []string) error {
 	}
 }
 
-// lint validates a vault and reports findings on stdout.
-func lint(args []string) error {
-	fs := flag.NewFlagSet("lint", flag.ContinueOnError)
-	root := fs.String("vault", ".", "path to the vault root")
-	strict := fs.Bool("strict", false, "treat warnings as failures")
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-
-	v, err := vault.Open(*root)
-	if err != nil {
-		return err
-	}
-
-	findings, err := v.Lint(fs.Args()...)
-	if err != nil {
-		return err
-	}
-
-	var errors, warnings int
-	for _, f := range findings {
-		fmt.Println(f)
-		if f.Severity == schema.SeverityError {
-			errors++
-		} else {
-			warnings++
-		}
-	}
-
-	switch {
-	case len(findings) == 0:
-		fmt.Println("no findings")
-		return nil
-	case errors > 0:
-		return fmt.Errorf("%d error(s), %d warning(s)", errors, warnings)
-	case *strict:
-		return fmt.Errorf("%d warning(s)", warnings)
-	default:
-		return nil
-	}
-}
-
 func usage() {
 	fmt.Fprint(os.Stderr, `gandalf — vault tooling for agent memory
 
 usage:
-  gandalf lint [-vault DIR] [-strict] [NOTE...]
+  gandalf init   [-vault DIR]
+  gandalf doctor [-vault DIR]
+  gandalf lint   [-vault DIR] [-strict] [NOTE...]
 
+  init    create the vault if needed and seed any missing GandalfOS
+          documents; never overwrites an existing file
+  doctor  report how the vault's copy of each shipped document compares
+          with this build, without changing anything
   lint    validate note metadata and links; with no NOTE arguments,
           every note in the vault is checked
 `)

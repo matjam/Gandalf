@@ -88,6 +88,11 @@ func (l Layout) Path(t schema.NoteType, scope, slug string, on schema.Date) (str
 	case schema.TypeGlossary:
 		return l.Glossary, nil
 
+	case schema.TypeReadme:
+		// A README belongs to whichever folder it documents, which the layout
+		// cannot infer.
+		return "", fmt.Errorf("readme notes need an explicit path")
+
 	default:
 		return "", fmt.Errorf("unknown note type %q", t)
 	}
