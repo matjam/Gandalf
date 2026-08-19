@@ -97,6 +97,15 @@ func (r *Repo) ensureLocked() error {
 		return err
 	}
 
+	// Line endings are not the user's global setting to decide either. With
+	// core.autocrlf on — the default from Git for Windows' installer — every
+	// note is rewritten to CRLF on checkout, so the bytes a seed fingerprint
+	// was taken over change, a note no longer round-trips through git
+	// byte-identically, and git warns about the conversion on every command.
+	if _, err := r.run("config", "core.autocrlf", "false"); err != nil {
+		return err
+	}
+
 	cfg, err := LoadConfig(r.root)
 	if err != nil {
 		return err
@@ -141,20 +150,17 @@ func (r *Repo) runRaw(args ...string) ([]byte, error) {
 	return out.Bytes(), nil
 }
 
-// run executes git in the vault root and returns combined output.
+// run executes git in the vault root and returns what it wrote to stdout,
+// trimmed. stderr is kept out of the result and folded into the error instead.
+//
+// Every caller here parses what it gets back — a diff, a status, a branch
+// name, a log — and git writes advice and warnings to stderr whenever it feels
+// like it. Returning the two streams merged put a line-ending conversion
+// warning inside a diff and made an unchanged note look modified.
 func (r *Repo) run(args ...string) (string, error) {
-	cmd := exec.Command("git", args...)
-	cmd.Dir = r.root
-	var buf bytes.Buffer
-	cmd.Stdout = &buf
-	cmd.Stderr = &buf
-	err := cmd.Run()
-	out := strings.TrimSpace(buf.String())
+	out, err := r.runRaw(args...)
 	if err != nil {
-		if out != "" {
-			return out, fmt.Errorf("%w: %s", err, out)
-		}
-		return out, err
+		return "", err
 	}
-	return out, nil
+	return strings.TrimSpace(string(out)), nil
 }

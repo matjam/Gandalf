@@ -115,6 +115,56 @@ func TestSetRemotePersistsConfig(t *testing.T) {
 	}
 }
 
+// TestRunKeepsStderrOutOfTheResult is the Windows CI failure in miniature.
+// Every caller of run parses what it returns — a diff, a status, a branch name
+// — and git writes advice and warnings to stderr whenever it likes. Merged into
+// one stream, a line-ending warning landed inside a diff and made an unchanged
+// note read as modified.
+func TestRunKeepsStderrOutOfTheResult(t *testing.T) {
+	requireGit(t)
+
+	repo := Open(t.TempDir())
+	if err := repo.Ensure(); err != nil {
+		t.Fatalf("Ensure: %v", err)
+	}
+
+	// Creating a branch is announced on stderr, with nothing on stdout.
+	out, err := repo.run("checkout", "-b", "sidetrack")
+	if err != nil {
+		t.Fatalf("checkout: %v", err)
+	}
+	if out != "" {
+		t.Errorf("run returned %q, want stderr kept out of the result", out)
+	}
+}
+
+// TestEnsurePinsLineEndings covers the other half: the conversion that produced
+// the warning must not happen to a vault at all, whatever the machine's global
+// git config says.
+func TestEnsurePinsLineEndings(t *testing.T) {
+	requireGit(t)
+
+	repo := Open(t.TempDir())
+	if err := repo.Ensure(); err != nil {
+		t.Fatalf("Ensure: %v", err)
+	}
+
+	if _, err := repo.run("config", "core.autocrlf", "true"); err != nil {
+		t.Fatalf("set core.autocrlf: %v", err)
+	}
+	if err := repo.Ensure(); err != nil {
+		t.Fatalf("Ensure again: %v", err)
+	}
+
+	out, err := repo.run("config", "core.autocrlf")
+	if err != nil {
+		t.Fatalf("read core.autocrlf: %v", err)
+	}
+	if out != "false" {
+		t.Errorf("core.autocrlf = %q, want false so notes keep the bytes they were written with", out)
+	}
+}
+
 func TestDisabledSkipsCommit(t *testing.T) {
 	requireGit(t)
 
