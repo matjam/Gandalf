@@ -7,6 +7,7 @@ import (
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/matjam/gandalf/internal/category"
 	"github.com/matjam/gandalf/internal/instructions"
 	"github.com/matjam/gandalf/internal/schema"
 )
@@ -38,6 +39,29 @@ type OpenSession struct {
 	Title string `json:"title"`
 }
 
+// Addressing is how one kind of note is named and whether it may be rewritten.
+//
+// It is generated from the vault's own categories rather than described in a
+// seeded document, because a document describing the vault's shape goes stale
+// the moment the shape changes and a seeded one cannot be corrected by a
+// release. The same reasoning keeps the tool list out of the instructions
+// entirely: the client already shows the model what each tool does.
+type Addressing struct {
+	RefForm string `json:"ref_form"`
+	Holds   string `json:"holds,omitempty"`
+
+	// Mutability says whether these notes may be rewritten in place or only
+	// added to. Knowing before trying is the point: the alternative is
+	// learning it from a refusal.
+	Mutability string `json:"mutability"`
+
+	// FacetMutability names the facets that answer differently from their
+	// category, such as a project's decisions log among its other notes.
+	FacetMutability map[string]string `json:"facet_mutability,omitempty"`
+
+	Retired bool `json:"retired,omitempty"`
+}
+
 // BootOutput is the session's starting context.
 type BootOutput struct {
 	Vault      string         `json:"vault"`
@@ -47,6 +71,15 @@ type BootOutput struct {
 	OpenToday  []OpenSession  `json:"open_sessions_today"`
 	Notices    []string       `json:"notices,omitempty"`
 	Addressing string         `json:"addressing"`
+
+	// Categories is how this vault's notes are addressed, generated from what
+	// the vault declares.
+	Categories map[string]Addressing `json:"categories"`
+
+	// Conventions are the rules the tool descriptions cannot carry: what a ref
+	// is, what every writing tool requires, what is read-only. Everything a
+	// single tool can explain about itself is left to that tool.
+	Conventions []string `json:"conventions"`
 
 	// Search says whether the search index is usable yet. Boot is where a
 	// session decides how it will find prior work, and that decision is wrong
@@ -71,9 +104,11 @@ func (s *Server) boot(ctx context.Context, _ *sdk.CallToolRequest, _ BootInput) 
 		Vault:   s.vault.Root(),
 		Version: instructions.Version,
 		Search:  s.indexStatus(),
-		Addressing: "Notes are addressed by ref, never by path: session:<date-slug>, " +
-			"project:<name>:<design|decisions|todo>, standard:<name>, topic:<name>, glossary. " +
-			"Refs come from these tools; do not construct file paths.",
+		Addressing: "Notes are addressed by ref — what a note is, not where it lives — never by " +
+			"path. The ref forms this vault uses are below, generated from the categories it " +
+			"declares. Refs come from these tools; do not construct one from a filename.",
+		Categories:  s.addressing(),
+		Conventions: conventions,
 	}
 
 	for _, doc := range instructions.Core() {
@@ -113,6 +148,49 @@ func (s *Server) boot(ctx context.Context, _ *sdk.CallToolRequest, _ BootInput) 
 	}
 
 	return nil, out, nil
+}
+
+// conventions are the standing rules about the tool surface as a whole.
+//
+// They live here rather than in a seeded document for the reason that document
+// kept getting wrong: a release can change these and cannot change the vault's
+// copy of anything. Anything one tool can say about itself is left to that
+// tool's own description, which the client already shows.
+var conventions = []string{
+	"A note outside the vault's filing conventions is addressed as path:<...>, and can be read but not written.",
+	"session:latest resolves to the most recent session note. Ask for it when you mean it; nothing defaults to it.",
+	"Every tool that changes the vault requires a reason. It becomes the commit message, so say why rather than what: what changed is recorded already.",
+	"Write links as refs, such as [[standard:language-go]]. A link to a note that does not exist is refused rather than creating one.",
+	"Each note ends with a maintained Backlinks block. Read it to see what depends on a note; never write into it.",
+	"Every change is committed, and past versions of a note can be read, compared, and restored. Nothing here rewrites history.",
+}
+
+// addressing reports how each of the vault's categories is named and whether
+// its notes may be rewritten.
+func (s *Server) addressing() map[string]Addressing {
+	out := map[string]Addressing{}
+
+	for _, c := range s.vault.Categories().Categories {
+		view := view(c, 0)
+		out[c.Name] = Addressing{
+			RefForm:         view.RefForm,
+			Holds:           view.Description,
+			Mutability:      view.Mutability,
+			FacetMutability: view.FacetMutability,
+			Retired:         view.Retired,
+		}
+	}
+
+	// Topics are Gandalf's own documents rather than a category the vault
+	// declares, so nothing above accounts for them, and a model that cannot
+	// address them cannot read the operating topics boot just listed.
+	out[KindTopic] = Addressing{
+		RefForm:    KindTopic + ":<name>",
+		Holds:      "operating topics Gandalf ships; the vault's copy is what is served",
+		Mutability: string(category.Replaceable),
+	}
+
+	return out
 }
 
 // document returns a shipped document's text, preferring the vault's copy.

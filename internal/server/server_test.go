@@ -261,6 +261,72 @@ func TestBoot(t *testing.T) {
 	}
 }
 
+// TestBootCarriesTheVaultsOwnAddressing covers what moved out of the seeded
+// protocol: how notes are addressed, and which may be rewritten, generated from
+// what the vault declares rather than described in a document a release cannot
+// correct.
+func TestBootCarriesTheVaultsOwnAddressing(t *testing.T) {
+	h := newHarness(t)
+
+	var out BootOutput
+	h.call("boot", BootInput{}, &out)
+
+	if len(out.Categories) == 0 {
+		t.Fatal("boot returned no addressing")
+	}
+	if len(out.Conventions) == 0 {
+		t.Error("boot returned no conventions")
+	}
+
+	session, ok := out.Categories["session"]
+	if !ok {
+		t.Fatal("no addressing for session notes")
+	}
+	if !strings.Contains(session.RefForm, "session:") {
+		t.Errorf("session ref form = %q", session.RefForm)
+	}
+	if session.Mutability != "append-only" {
+		t.Errorf("session mutability = %q, want append-only", session.Mutability)
+	}
+
+	// A project's decisions log answers differently from its other notes, and
+	// that exception is the one worth knowing before trying to rewrite one.
+	project, ok := out.Categories["project"]
+	if !ok {
+		t.Fatal("no addressing for project notes")
+	}
+	if project.FacetMutability["decisions"] != "append-only" {
+		t.Errorf("project facet mutability = %v, want decisions append-only", project.FacetMutability)
+	}
+
+	// Topics are Gandalf's own documents, so no category declares them, and a
+	// model that cannot address one cannot read the topics boot just listed.
+	if _, ok := out.Categories[KindTopic]; !ok {
+		t.Error("no addressing for topics, which boot lists by ref")
+	}
+
+	// Whatever boot says about addressing has to work when passed back.
+	for _, topic := range out.Topics {
+		var got NoteOutput
+		h.call("note_read", NoteReadInput{Ref: topic.Ref}, &got)
+		if got.Content == "" {
+			t.Errorf("%s returned no content", topic.Ref)
+		}
+	}
+
+	// The reason requirement is a rule about every writing tool, which no
+	// single tool's description states.
+	var mentioned bool
+	for _, c := range out.Conventions {
+		if strings.Contains(c, "reason") {
+			mentioned = true
+		}
+	}
+	if !mentioned {
+		t.Error("boot does not say that a change requires a reason")
+	}
+}
+
 // TestBootPrefersTheVaultOverTheBinary is the property that makes corrections
 // durable: an edited contract must be what the model receives.
 func TestBootPrefersTheVaultOverTheBinary(t *testing.T) {
