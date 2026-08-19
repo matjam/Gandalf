@@ -57,6 +57,9 @@ const (
 
 // noteReplace rewrites part of a note's body.
 func (s *Server) noteReplace(ctx context.Context, _ *sdk.CallToolRequest, in NoteReplaceInput) (*sdk.CallToolResult, NoteReplaceOutput, error) {
+	unlock := s.beginWrite()
+	defer unlock()
+
 	if err := checkReason(in.Reason); err != nil {
 		return nil, NoteReplaceOutput{}, err
 	}

@@ -53,7 +53,7 @@ func usage() {
 	fmt.Fprint(os.Stderr, `gandalf — vault tooling for agent memory
 
 usage:
-  gandalf serve   -vault DIR [-no-seed] [-no-git] [embedding flags]
+  gandalf serve   -vault DIR [-http ADDR] [-no-seed] [-no-git] [embedding flags]
   gandalf init    [-vault DIR] [-restore] [-git-remote URL] [-no-git]
   gandalf update  [-vault DIR]
   gandalf import  -from DIR [-vault DIR] [-rules FILE] [-apply]
@@ -70,7 +70,10 @@ embedding flags:
   serve   run the MCP server over stdio, seeding the vault first unless
           -no-seed is given; maintains a git repo of the vault unless
           -no-git is given, committing every change and syncing a remote
-          when one is configured
+          when one is configured. With -http ADDR it serves the same tools
+          over HTTP instead, so agents on other machines can use one vault;
+          that mode requires a bearer token in GANDALF_HTTP_TOKEN, and the
+          address decides which interface the vault is reachable on
   import  move an existing markdown vault in, preserving dates and
           rewriting links; prints the plan and writes nothing without -apply
   reindex build the search index up front, rather than on the first search

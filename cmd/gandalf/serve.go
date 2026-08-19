@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/matjam/gandalf/internal/git"
@@ -19,12 +20,19 @@ import (
 // time with -ldflags "-X main.version=...".
 var version = "dev"
 
-// serve runs the MCP server over stdio until the client disconnects.
+// tokenEnv names the environment variable carrying the bearer token for the
+// HTTP transport. It is not a flag: a flag puts the credential in the process
+// list, where every other user on the machine can read it.
+const tokenEnv = "GANDALF_HTTP_TOKEN"
+
+// serve runs the MCP server until the client disconnects or the process is
+// stopped, over stdio by default and over HTTP when given an address.
 func serve(args []string) error {
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
 	root := fs.String("vault", "", "path to the vault root (required)")
 	noSeed := fs.Bool("no-seed", false, "do not seed missing GandalfOS documents on startup")
 	noGit := fs.Bool("no-git", false, "do not create or maintain a git repository")
+	addr := fs.String("http", "", "serve over HTTP on this address instead of stdio, such as 127.0.0.1:8760")
 
 	var embedding embedderFlags
 	embedding.register(fs)
@@ -38,6 +46,13 @@ func serve(args []string) error {
 	embedder, err := embedding.build()
 	if err != nil {
 		return err
+	}
+
+	token := os.Getenv(tokenEnv)
+	if *addr != "" && strings.TrimSpace(token) == "" {
+		return fmt.Errorf("serving over HTTP needs a bearer token in %s; "+
+			"the vault is served with tools that rewrite and delete notes, so there is no "+
+			"unauthenticated mode", tokenEnv)
 	}
 
 	v, repo, err := prepare(*root, !*noSeed, !*noGit)
@@ -60,6 +75,9 @@ func serve(args []string) error {
 		repo.StartSync(ctx)
 	}
 
+	if *addr != "" {
+		return srv.RunHTTP(ctx, server.HTTPConfig{Addr: *addr, Token: token})
+	}
 	return srv.Run(ctx)
 }
 

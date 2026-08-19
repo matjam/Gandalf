@@ -123,6 +123,9 @@ type CategoryChangeOutput struct {
 
 // categoryCreate declares a new category.
 func (s *Server) categoryCreate(ctx context.Context, _ *sdk.CallToolRequest, in CategoryCreateInput) (*sdk.CallToolResult, CategoryChangeOutput, error) {
+	unlock := s.beginWrite()
+	defer unlock()
+
 	if err := checkReason(in.Reason); err != nil {
 		return nil, CategoryChangeOutput{}, err
 	}
@@ -169,6 +172,9 @@ type CategoryNameInput struct {
 
 // categoryRetire hides a category from creation without orphaning its notes.
 func (s *Server) categoryRetire(ctx context.Context, _ *sdk.CallToolRequest, in CategoryNameInput) (*sdk.CallToolResult, CategoryChangeOutput, error) {
+	unlock := s.beginWrite()
+	defer unlock()
+
 	if err := checkReason(in.Reason); err != nil {
 		return nil, CategoryChangeOutput{}, err
 	}
@@ -209,6 +215,9 @@ func (s *Server) categoryRetire(ctx context.Context, _ *sdk.CallToolRequest, in 
 // leave them addressable only by path — readable, unwritable, and absent from
 // every listing — which is a quiet way to lose a year of work.
 func (s *Server) categoryDelete(ctx context.Context, _ *sdk.CallToolRequest, in CategoryNameInput) (*sdk.CallToolResult, CategoryChangeOutput, error) {
+	unlock := s.beginWrite()
+	defer unlock()
+
 	if err := checkReason(in.Reason); err != nil {
 		return nil, CategoryChangeOutput{}, err
 	}

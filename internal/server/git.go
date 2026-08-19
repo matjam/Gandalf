@@ -24,6 +24,9 @@ type GitRemoteOutput struct {
 // gitRemote sets or clears the vault's git remote. Gandalf owns the commits;
 // this is the one git decision a model is allowed to make.
 func (s *Server) gitRemote(ctx context.Context, _ *sdk.CallToolRequest, in GitRemoteInput) (*sdk.CallToolResult, GitRemoteOutput, error) {
+	unlock := s.beginWrite()
+	defer unlock()
+
 	if s.git == nil {
 		return nil, GitRemoteOutput{}, fmt.Errorf(
 			"this vault is not under git for this process; restart without -no-git, or run `gandalf init`")

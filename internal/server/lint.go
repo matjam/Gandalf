@@ -105,6 +105,9 @@ type CorrectOutput struct {
 // belongs in the history, where it stops the same argument recurring without
 // costing context every time.
 func (s *Server) correct(ctx context.Context, _ *sdk.CallToolRequest, in CorrectInput) (*sdk.CallToolResult, CorrectOutput, error) {
+	unlock := s.beginWrite()
+	defer unlock()
+
 	if in.Guidance == "" {
 		return nil, CorrectOutput{}, fmt.Errorf("a correction needs guidance to record")
 	}

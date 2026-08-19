@@ -30,6 +30,9 @@ type NoteDeleteOutput struct {
 // referrers come back in the error so the caller can fix them rather than
 // hunting for them.
 func (s *Server) noteDelete(ctx context.Context, _ *sdk.CallToolRequest, in NoteDeleteInput) (*sdk.CallToolResult, NoteDeleteOutput, error) {
+	unlock := s.beginWrite()
+	defer unlock()
+
 	if err := checkReason(in.Reason); err != nil {
 		return nil, NoteDeleteOutput{}, err
 	}

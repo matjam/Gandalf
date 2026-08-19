@@ -112,6 +112,9 @@ type SessionStartOutput struct {
 // work that slugify the same on one day are far likelier than a deliberate
 // request to start over, and overwriting would destroy the record.
 func (s *Server) sessionStart(ctx context.Context, _ *sdk.CallToolRequest, in SessionStartInput) (*sdk.CallToolResult, SessionStartOutput, error) {
+	unlock := s.beginWrite()
+	defer unlock()
+
 	if err := checkReason(in.Reason); err != nil {
 		return nil, SessionStartOutput{}, err
 	}
@@ -170,6 +173,9 @@ type NoteNewInput struct {
 // Sessions are excluded deliberately: session_start creates those,
 // setting the authorship and status the memory protocol expects.
 func (s *Server) noteNew(ctx context.Context, _ *sdk.CallToolRequest, in NoteNewInput) (*sdk.CallToolResult, NoteOutput, error) {
+	unlock := s.beginWrite()
+	defer unlock()
+
 	if err := checkReason(in.Reason); err != nil {
 		return nil, NoteOutput{}, err
 	}
@@ -233,6 +239,9 @@ type NoteAppendInput struct {
 
 // noteAppend adds to a note's body.
 func (s *Server) noteAppend(ctx context.Context, _ *sdk.CallToolRequest, in NoteAppendInput) (*sdk.CallToolResult, NoteOutput, error) {
+	unlock := s.beginWrite()
+	defer unlock()
+
 	if strings.TrimSpace(in.Content) == "" {
 		return nil, NoteOutput{}, fmt.Errorf("nothing to append")
 	}
@@ -303,6 +312,9 @@ type NoteUpdateInput struct {
 
 // noteUpdate changes a note's metadata, never its body.
 func (s *Server) noteUpdate(ctx context.Context, _ *sdk.CallToolRequest, in NoteUpdateInput) (*sdk.CallToolResult, NoteOutput, error) {
+	unlock := s.beginWrite()
+	defer unlock()
+
 	if err := checkReason(in.Reason); err != nil {
 		return nil, NoteOutput{}, err
 	}

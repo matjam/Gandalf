@@ -331,6 +331,9 @@ type NoteRestoreOutput struct {
 
 // noteRestore writes a past version of a note back as the current one.
 func (s *Server) noteRestore(ctx context.Context, _ *sdk.CallToolRequest, in NoteRestoreInput) (*sdk.CallToolResult, NoteRestoreOutput, error) {
+	unlock := s.beginWrite()
+	defer unlock()
+
 	if err := checkReason(in.Reason); err != nil {
 		return nil, NoteRestoreOutput{}, err
 	}

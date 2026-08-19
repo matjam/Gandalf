@@ -10,7 +10,7 @@ package server
 import (
 	"context"
 	"fmt"
-	"os"
+	"log/slog"
 	"strings"
 	"sync"
 
@@ -26,8 +26,15 @@ import (
 // filed. It is reserved: a category may not take the name.
 const KindTopic = "topic"
 
-// Server exposes one vault.
-type Server struct {
+// Core is what one vault has exactly one of, however many sessions are
+// connected to it: the notes themselves, the repository they are committed
+// to, the search index over them, and the lock that serialises changes.
+//
+// Over stdio there is only ever one session, so the split makes no difference.
+// Over HTTP a core is shared by every connected agent, and duplicating any of
+// these would mean one SQLite handle, one background index pass, and one git
+// sync loop per agent.
+type Core struct {
 	vault *vault.Vault
 
 	// git maintains the vault as a repository when set. Mutations commit
@@ -44,16 +51,35 @@ type Server struct {
 	// does not turn the first search into a stall of unknown length.
 	indexer *indexer
 
-	// read records which notes have been read during this connection, so a
-	// replacement cannot be aimed at text the caller has not seen. It is
-	// deliberately not persisted: a restarted process has forgotten what the
-	// note said, and so has whatever is driving it.
-	mu   sync.Mutex
-	read map[string]bool
+	// write serialises changes to the vault, held from before a note is read
+	// to after the commit that records the change.
+	//
+	// Two properties depend on it. Committing runs git add -A, so an
+	// overlapping change would be swept into another session's commit under
+	// the wrong reason; and writing a note rebuilds the backlink blocks of the
+	// notes it links to, so two changes touching one target can otherwise lose
+	// an update. Both are read-modify-write over the whole vault, which is why
+	// the lock is vault-wide rather than per note.
+	write sync.Mutex
 
 	// name and version identify this build to the client.
 	name    string
 	version string
+}
+
+// Server is one session over a Core: one stdio connection, or one HTTP client
+// holding a session id.
+type Server struct {
+	*Core
+
+	// read records which notes have been read during this session, so a
+	// replacement cannot be aimed at text the caller has not seen. It is
+	// per-session rather than per-process because one agent having read a note
+	// says nothing about what another has seen, and it is not persisted
+	// because a restarted process has forgotten what the note said, and so has
+	// whatever is driving it.
+	mu   sync.Mutex
+	read map[string]bool
 }
 
 // markRead records that a note's current text has been seen.
@@ -108,7 +134,7 @@ func versionKey(ref vault.Ref, commit string) string {
 
 // New returns a server over the given vault, without search.
 func New(v *vault.Vault, version string) *Server {
-	return &Server{vault: v, name: "gandalf", version: version, indexer: newIndexer()}
+	return &Server{Core: &Core{vault: v, name: "gandalf", version: version, indexer: newIndexer()}}
 }
 
 // WithSearch returns a server that can also search, using the given embedder.
@@ -125,6 +151,25 @@ func (s *Server) WithGit(repo *git.Repo) *Server {
 	return s
 }
 
+// Session returns a server for one new connection to the same vault.
+//
+// Everything the vault has one of is shared; what has been read is not, so one
+// agent's reading cannot satisfy another agent's read-before-write gate. The
+// returned server holds nothing that needs releasing: Close belongs to whoever
+// built the core, and closing it here would take the shared index out from
+// under every other session.
+func (s *Server) Session() *Server {
+	return &Server{Core: s.Core}
+}
+
+// beginWrite takes the vault-wide write lock and returns the function that
+// releases it. Every tool that changes the vault holds it from before it reads
+// the note through to after the change is committed.
+func (c *Core) beginWrite() func() {
+	c.write.Lock()
+	return c.write.Unlock
+}
+
 // record commits the vault after a successful mutation. A commit failure is
 // logged and never returned: the note already landed, and a missing commit is
 // recoverable on the next change.
@@ -139,7 +184,7 @@ func (s *Server) record(message, reason string) {
 		return
 	}
 	if err := s.git.Commit(message, reason); err != nil {
-		fmt.Fprintf(os.Stderr, "gandalf: git commit: %v\n", err)
+		slog.Error("gandalf: git commit", "message", message, "error", err)
 	}
 }
 
@@ -158,8 +203,11 @@ func checkReason(reason string) error {
 	return nil
 }
 
-// Close releases anything the server opened, stopping background indexing
-// before the index it writes to is closed.
+// Close releases anything the vault's core opened, stopping background
+// indexing before the index it writes to is closed.
+//
+// It belongs to whoever constructed the server, once, at shutdown. Sessions
+// returned by Session share the core and must not close it.
 func (s *Server) Close() error {
 	s.stopIndexing()
 	return s.closeIndex()

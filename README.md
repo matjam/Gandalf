@@ -160,7 +160,9 @@ decisions log, needs `force`: it would delete what was appended since.
 
 ## Connect an agent
 
-Gandalf speaks MCP over stdio. Point your harness at `gandalf serve` with a vault.
+Gandalf speaks MCP over stdio by default. Point your harness at `gandalf serve`
+with a vault. To keep one vault on a server and reach it from several machines,
+see [Serve a vault over HTTP](#serve-a-vault-over-http) below.
 
 ### Claude Code
 
@@ -225,6 +227,45 @@ gandalf serve -vault /path/to/vault
 
 The server seeds the vault on startup unless `-no-seed` is given, so pointing a
 fresh client at an empty directory is a complete install step.
+
+## Serve a vault over HTTP
+
+`-http` serves the same tools over HTTP instead of stdio, so one machine can hold
+the vault and agents elsewhere can use it without installing anything. The vault,
+its repository, and its search index stay on the server; each connected agent gets
+its own session, so one agent having read a note does not satisfy another agent's
+read-before-write gate, and changes are serialised so two agents cannot lose each
+other's edits.
+
+Every request must carry a bearer token, which the server reads from
+`GANDALF_HTTP_TOKEN`. There is no unauthenticated mode: the tools being served
+rewrite and delete the user's notes. The token is taken from the environment
+rather than a flag so it does not appear in the process list.
+
+```
+GANDALF_HTTP_TOKEN=$(openssl rand -hex 32) \
+  gandalf serve -vault ~/Documents/Vaults/Gandalf -http 100.64.0.1:8760
+```
+
+The address decides which interface the vault is reachable on. Prefer a Tailscale
+or LAN address over `0.0.0.0`, and put it behind TLS if it crosses a network you
+do not control — the token is sent in a header, so plain HTTP exposes it to
+anything on the path.
+
+Point a client at it with the token as a header:
+
+```
+claude mcp add --transport http gandalf http://100.64.0.1:8760 \
+  --header "Authorization: Bearer $GANDALF_HTTP_TOKEN"
+```
+
+Embeddings are a separate question. `-embed-url` already points search at any
+OpenAI-compatible endpoint, so running the model on a machine with a GPU needs no
+remote server:
+
+```
+gandalf serve -vault DIR -embed-url http://gpu-box:11434/v1
+```
 
 ### Make the agent call boot
 
@@ -312,7 +353,7 @@ of the import. Run `gandalf lint` afterwards to see what still needs attention.
 ## Commands
 
 ```
-gandalf serve   -vault DIR [-no-seed] [-no-git] [embedding flags]
+gandalf serve   -vault DIR [-http ADDR] [-no-seed] [-no-git] [embedding flags]
 gandalf init    [-vault DIR] [-restore] [-git-remote URL] [-no-git]
 gandalf import  -from DIR [-vault DIR] [-rules FILE] [-apply]
 gandalf reindex [-vault DIR] [-quiet] [-all] [embedding flags]

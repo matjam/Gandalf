@@ -23,6 +23,7 @@ import (
 type harness struct {
 	t       *testing.T
 	client  *sdk.ClientSession
+	server  *Server
 	vault   *vault.Vault
 	context context.Context
 }
@@ -78,7 +79,7 @@ func harnessFor(t *testing.T, withGit bool) *harness {
 	}
 	t.Cleanup(func() { session.Close() })
 
-	return &harness{t: t, client: session, vault: v, context: ctx}
+	return &harness{t: t, client: session, server: s, vault: v, context: ctx}
 }
 
 // withReason fills in the reason a mutating tool requires, so a test about
