@@ -111,7 +111,7 @@ func (r *Repo) ensureLocked() error {
 		}
 	}
 
-	return r.commitLocked("gandalf: initialise vault")
+	return r.commitLocked("gandalf: initialise vault", "")
 }
 
 // isRepoUnlocked is IsRepo without taking the mutex.

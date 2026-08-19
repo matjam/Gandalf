@@ -134,12 +134,29 @@ The model does not run git. Gandalf does:
 
 - `init` and `serve` create a repository when one is missing.
 - Every MCP mutation (and the end of `import` / `update`) becomes a commit.
+- Every tool that changes the vault requires a `reason`, which becomes the
+  commit body. The generated subject says which tool touched which note; the
+  reason says why, and is what makes the history worth reading later.
 - When a remote is configured, `serve` periodically pulls and pushes. Pull
   conflicts resolve as **remote-wins**.
 - The model configures the remote with `git_remote` (or you pass
   `-git-remote` to `init`). Settings live in `.gandalf/git.json`.
 
 Derived search indexes stay out of git via `.gandalf/.gitignore`.
+
+That history is readable from the tools, so recovering a bad edit does not mean
+dropping to a shell:
+
+- `history` lists the commits behind one note, or the whole vault, each with
+  the reason given for it.
+- `note_version` returns a note as it stood at a commit.
+- `note_diff` compares two versions, or a version against the working tree.
+- `note_restore` writes an old version back as a new commit — never a rewrite of
+  history.
+
+Renames are followed, so a note moved by a change of filing convention keeps its
+past. Restoring a note that is a chronological record, such as a session or a
+decisions log, needs `force`: it would delete what was appended since.
 
 ## Connect an agent
 

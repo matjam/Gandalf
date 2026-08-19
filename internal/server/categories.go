@@ -116,17 +116,24 @@ func (s *Server) categoryCreate(ctx context.Context, _ *sdk.CallToolRequest, in 
 		return nil, CategoryChangeOutput{}, err
 	}
 
-	s.record("gandalf: category create " + cat.Name)
+	// The description is the reason: a new category's why is what it is for,
+	// which the caller has already had to state.
+	s.record("gandalf: category create "+cat.Name, cat.Description)
 	return nil, CategoryChangeOutput{Category: view(cat, 0)}, nil
 }
 
 // CategoryNameInput names an existing category.
 type CategoryNameInput struct {
-	Name string `json:"name"`
+	Name   string `json:"name"`
+	Reason string `json:"reason" jsonschema:"why the vault is changing shape this way, in a few words; it becomes the commit message"`
 }
 
 // categoryRetire hides a category from creation without orphaning its notes.
 func (s *Server) categoryRetire(ctx context.Context, _ *sdk.CallToolRequest, in CategoryNameInput) (*sdk.CallToolResult, CategoryChangeOutput, error) {
+	if err := checkReason(in.Reason); err != nil {
+		return nil, CategoryChangeOutput{}, err
+	}
+
 	set := s.vault.Categories()
 
 	cat, ok := set.Lookup(in.Name)
@@ -150,7 +157,7 @@ func (s *Server) categoryRetire(ctx context.Context, _ *sdk.CallToolRequest, in 
 		return nil, CategoryChangeOutput{}, err
 	}
 
-	s.record("gandalf: category retire " + cat.Name)
+	s.record("gandalf: category retire "+cat.Name, in.Reason)
 	return nil, CategoryChangeOutput{
 		Category: view(cat, counts[cat.Name]),
 		Note:     "no new notes can be filed here; the ones already filed stay addressable",
@@ -163,6 +170,10 @@ func (s *Server) categoryRetire(ctx context.Context, _ *sdk.CallToolRequest, in 
 // leave them addressable only by path — readable, unwritable, and absent from
 // every listing — which is a quiet way to lose a year of work.
 func (s *Server) categoryDelete(ctx context.Context, _ *sdk.CallToolRequest, in CategoryNameInput) (*sdk.CallToolResult, CategoryChangeOutput, error) {
+	if err := checkReason(in.Reason); err != nil {
+		return nil, CategoryChangeOutput{}, err
+	}
+
 	set := s.vault.Categories()
 
 	cat, ok := set.Lookup(in.Name)
@@ -187,7 +198,7 @@ func (s *Server) categoryDelete(ctx context.Context, _ *sdk.CallToolRequest, in 
 		return nil, CategoryChangeOutput{}, err
 	}
 
-	s.record("gandalf: category delete " + cat.Name)
+	s.record("gandalf: category delete "+cat.Name, in.Reason)
 	return nil, CategoryChangeOutput{
 		Category: view(cat, 0),
 		Note:     "deleted; the folder itself is left alone",

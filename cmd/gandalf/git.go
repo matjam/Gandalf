@@ -23,7 +23,10 @@ func ensureVaultGit(v *vault.Vault) error {
 // A missing or disabled repo is a silent no-op.
 func commitVault(v *vault.Vault, message string) {
 	repo := git.Open(v.Root())
-	if err := repo.Commit(message); err != nil {
+	// No reason: a command run from a terminal has its message and nothing
+	// more to say. Reasons come from the tools, where somebody asked for the
+	// change and can say why.
+	if err := repo.Commit(message, ""); err != nil {
 		fmt.Fprintf(os.Stderr, "gandalf: git commit: %v\n", err)
 	}
 }

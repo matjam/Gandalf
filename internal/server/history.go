@@ -53,6 +53,11 @@ type CommitOutput struct {
 	Date    string `json:"date"`
 	Message string `json:"message"`
 
+	// Reason is why the change was made, as given by whoever made it. It is
+	// what the message cannot say: the message reports that a note was
+	// replaced, and this reports what the replacement was for.
+	Reason string `json:"reason,omitempty"`
+
 	// Change and From describe what the commit did to the note the history
 	// was scoped to, and are empty in a vault-wide history.
 	Change string `json:"change,omitempty"`
@@ -122,7 +127,7 @@ func (s *Server) noteCommits(entries []git.Entry) []CommitOutput {
 	out := make([]CommitOutput, 0, len(entries))
 
 	for _, entry := range entries {
-		commit := CommitOutput{Commit: entry.Commit, Date: entry.Date, Message: entry.Message}
+		commit := CommitOutput{Commit: entry.Commit, Date: entry.Date, Message: entry.Message, Reason: entry.Reason}
 		if len(entry.Files) > 0 {
 			file := entry.Files[0]
 			commit.Change = string(file.Change)
@@ -145,7 +150,7 @@ func (s *Server) vaultCommits(entries []git.Entry) []CommitOutput {
 	out := make([]CommitOutput, 0, len(entries))
 
 	for _, entry := range entries {
-		commit := CommitOutput{Commit: entry.Commit, Date: entry.Date, Message: entry.Message}
+		commit := CommitOutput{Commit: entry.Commit, Date: entry.Date, Message: entry.Message, Reason: entry.Reason}
 		for _, file := range entry.Files {
 			if !strings.EqualFold(path.Ext(file.Path), ".md") {
 				continue
@@ -299,6 +304,8 @@ type NoteRestoreInput struct {
 	Ref    string `json:"ref"`
 	Commit string `json:"commit" jsonschema:"the commit to restore the note from, as returned by history"`
 
+	Reason string `json:"reason" jsonschema:"why this version is being put back, in a few words; it becomes the commit message"`
+
 	Force bool `json:"force,omitempty" jsonschema:"restore a note that is normally append-only, such as a session or a decisions log. Doing so discards whatever was appended since, so use it to undo damage rather than to revise a record"`
 }
 
@@ -324,6 +331,10 @@ type NoteRestoreOutput struct {
 
 // noteRestore writes a past version of a note back as the current one.
 func (s *Server) noteRestore(ctx context.Context, _ *sdk.CallToolRequest, in NoteRestoreInput) (*sdk.CallToolResult, NoteRestoreOutput, error) {
+	if err := checkReason(in.Reason); err != nil {
+		return nil, NoteRestoreOutput{}, err
+	}
+
 	repo, err := s.repo()
 	if err != nil {
 		return nil, NoteRestoreOutput{}, err
@@ -411,7 +422,7 @@ func (s *Server) noteRestore(ctx context.Context, _ *sdk.CallToolRequest, in Not
 	if forced {
 		message += " (forced, append-only)"
 	}
-	s.record(message)
+	s.record(message, in.Reason)
 
 	return nil, NoteRestoreOutput{
 		NoteOutput:   s.describe(ref, note),

@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 // historyRepo is an initialised vault repository with nothing in it yet.
@@ -22,6 +23,12 @@ func historyRepo(t *testing.T) *Repo {
 // commitFile writes a note and commits it, the way a tool mutation does.
 func commitFile(t *testing.T, repo *Repo, rel, content, message string) {
 	t.Helper()
+	commitFileBecause(t, repo, rel, content, message, "")
+}
+
+// commitFileBecause is commitFile with the reason a caller gave for the change.
+func commitFileBecause(t *testing.T, repo *Repo, rel, content, message, reason string) {
+	t.Helper()
 
 	abs := filepath.Join(repo.Root(), filepath.FromSlash(rel))
 	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
@@ -30,7 +37,7 @@ func commitFile(t *testing.T, repo *Repo, rel, content, message string) {
 	if err := os.WriteFile(abs, []byte(content), 0o644); err != nil {
 		t.Fatalf("write %q: %v", rel, err)
 	}
-	if err := repo.Commit(message); err != nil {
+	if err := repo.Commit(message, reason); err != nil {
 		t.Fatalf("Commit: %v", err)
 	}
 }
@@ -50,7 +57,7 @@ func commitMove(t *testing.T, repo *Repo, from, to, content, message string) {
 	if err := os.Remove(filepath.Join(repo.Root(), filepath.FromSlash(from))); err != nil {
 		t.Fatalf("remove %q: %v", from, err)
 	}
-	if err := repo.Commit(message); err != nil {
+	if err := repo.Commit(message, ""); err != nil {
 		t.Fatalf("Commit: %v", err)
 	}
 }
@@ -133,7 +140,7 @@ func TestLogDoesNotCrossIntoAnotherNotesHistory(t *testing.T) {
 		[]byte(noteText("Other — Design", "Something to link at.\n\n## Backlinks\n\n- [[Projects/gandalf/Design]]")), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := repo.Commit("note new gandalf"); err != nil {
+	if err := repo.Commit("note new gandalf", ""); err != nil {
 		t.Fatalf("Commit: %v", err)
 	}
 
@@ -228,7 +235,7 @@ func TestPathAtReportsADeletedNoteAsAbsent(t *testing.T) {
 	if err := os.Remove(filepath.Join(repo.Root(), filepath.FromSlash("Projects/A/Design.md"))); err != nil {
 		t.Fatalf("remove: %v", err)
 	}
-	if err := repo.Commit("deleted"); err != nil {
+	if err := repo.Commit("deleted", ""); err != nil {
 		t.Fatalf("Commit: %v", err)
 	}
 
@@ -381,7 +388,7 @@ func TestLogAllReportsEveryPathACommitTouched(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := repo.Commit("two notes at once"); err != nil {
+	if err := repo.Commit("two notes at once", ""); err != nil {
 		t.Fatalf("Commit: %v", err)
 	}
 
@@ -394,5 +401,132 @@ func TestLogAllReportsEveryPathACommitTouched(t *testing.T) {
 	}
 	if len(entries[0].Files) != 2 {
 		t.Errorf("commit touched %d files, want 2: %+v", len(entries[0].Files), entries[0].Files)
+	}
+}
+
+func TestCommitRecordsTheReasonAndLogReadsItBack(t *testing.T) {
+	repo := historyRepo(t)
+
+	const reason = "record the decision to keep tool docs in the binary"
+	commitFileBecause(t, repo, "Projects/A/Design.md", "one\n", "gandalf: note new project:A:design", reason)
+
+	entries, err := repo.Log("Projects/A/Design.md", 0)
+	if err != nil {
+		t.Fatalf("Log: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("got %d entries, want 1", len(entries))
+	}
+	if entries[0].Message != "gandalf: note new project:A:design" {
+		t.Errorf("message = %q", entries[0].Message)
+	}
+	if entries[0].Reason != reason {
+		t.Errorf("reason = %q, want %q", entries[0].Reason, reason)
+	}
+	if len(entries[0].Files) != 1 {
+		t.Errorf("commit touched %d files, want 1: %+v", len(entries[0].Files), entries[0].Files)
+	}
+
+	// The subject stays what it was, so a log read by a human is unchanged by
+	// the reason living in the body.
+	subject, err := repo.run("log", "-1", "--pretty=%s")
+	if err != nil {
+		t.Fatalf("log: %v", err)
+	}
+	if subject != "gandalf: note new project:A:design" {
+		t.Errorf("subject = %q", subject)
+	}
+}
+
+// TestCommitWithoutAReasonHasNoBody covers commits Gandalf makes on its own
+// behalf, and every commit made before reasons were recorded.
+func TestCommitWithoutAReasonHasNoBody(t *testing.T) {
+	repo := historyRepo(t)
+	commitFile(t, repo, "Projects/A/Design.md", "one\n", "gandalf: initialise vault")
+
+	entries, err := repo.Log("Projects/A/Design.md", 0)
+	if err != nil {
+		t.Fatalf("Log: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("got %d entries, want 1", len(entries))
+	}
+	if entries[0].Reason != "" {
+		t.Errorf("reason = %q, want empty", entries[0].Reason)
+	}
+	if len(entries[0].Files) != 1 {
+		t.Errorf("commit touched %d files, want 1: %+v", len(entries[0].Files), entries[0].Files)
+	}
+}
+
+// TestAMultiLineReasonStaysOnOneLine is what keeps the log parseable: a body
+// spanning several lines is indistinguishable from the file list below it.
+func TestAMultiLineReasonStaysOnOneLine(t *testing.T) {
+	repo := historyRepo(t)
+
+	commitFileBecause(t, repo, "Projects/A/Design.md", "one\n", "gandalf: note new project:A:design",
+		"first line\nsecond line\n\tthird\tline")
+
+	entries, err := repo.Log("Projects/A/Design.md", 0)
+	if err != nil {
+		t.Fatalf("Log: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("got %d entries, want 1", len(entries))
+	}
+	if want := "first line second line third line"; entries[0].Reason != want {
+		t.Errorf("reason = %q, want %q", entries[0].Reason, want)
+	}
+	if len(entries[0].Files) != 1 {
+		t.Errorf("commit touched %d files, want 1: %+v", len(entries[0].Files), entries[0].Files)
+	}
+}
+
+// TestABodyThatLooksLikeAFileListIsNotOne guards the parser against a commit
+// made outside Gandalf, where the body can be anything at all.
+func TestABodyThatLooksLikeAFileListIsNotOne(t *testing.T) {
+	repo := historyRepo(t)
+	commitFile(t, repo, "Projects/A/Design.md", "one\n", "first")
+
+	abs := filepath.Join(repo.Root(), filepath.FromSlash("Projects/A/Design.md"))
+	if err := os.WriteFile(abs, []byte("two\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repo.run("add", "-A"); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	// A body whose lines are tab-separated, as a hand-written commit may well
+	// be. Read as name-status it would claim the commit touched a file called
+	// "of the old note".
+	if _, err := repo.run("commit", "-m", "by hand", "-m", "M\tsome notes\nD\tof the old note"); err != nil {
+		t.Fatalf("commit: %v", err)
+	}
+
+	entries, err := repo.Log("Projects/A/Design.md", 1)
+	if err != nil {
+		t.Fatalf("Log: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("got %d entries, want 1", len(entries))
+	}
+	for _, file := range entries[0].Files {
+		if file.Path != "Projects/A/Design.md" {
+			t.Errorf("commit reports touching %q, which is a line of its message", file.Path)
+		}
+	}
+}
+
+func TestOneLineBoundsALongReason(t *testing.T) {
+	long := strings.Repeat("ünïcode ", 200)
+
+	got := OneLine(long)
+	if runes := []rune(got); len(runes) > maxReason+3 {
+		t.Errorf("reason is %d runes, want at most %d", len(runes), maxReason+3)
+	}
+	if !strings.HasSuffix(got, "...") {
+		t.Errorf("a truncated reason does not say so: %q", got[len(got)-10:])
+	}
+	if !utf8.ValidString(got) {
+		t.Error("truncation produced invalid UTF-8")
 	}
 }

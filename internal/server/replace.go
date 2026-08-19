@@ -27,6 +27,8 @@ type NoteReplaceInput struct {
 	To             string `json:"to,omitempty" jsonschema:"literal text marking the end of the span; must appear exactly once, after from"`
 	IncludeAnchors bool   `json:"include_anchors,omitempty" jsonschema:"also replace the anchors themselves; by default they are kept"`
 
+	Reason string `json:"reason" jsonschema:"why this change is being made, in a few words; it becomes the commit message"`
+
 	Force bool `json:"force,omitempty" jsonschema:"rewrite a note that is normally append-only, such as a session or a decisions log. Use it to repair a defect — a missing title, a broken link, malformed prose — not to tidy or reword a record of what was known at the time"`
 }
 
@@ -55,6 +57,10 @@ const (
 
 // noteReplace rewrites part of a note's body.
 func (s *Server) noteReplace(ctx context.Context, _ *sdk.CallToolRequest, in NoteReplaceInput) (*sdk.CallToolResult, NoteReplaceOutput, error) {
+	if err := checkReason(in.Reason); err != nil {
+		return nil, NoteReplaceOutput{}, err
+	}
+
 	ref, path, err := s.writable(in.Ref)
 	if err != nil {
 		return nil, NoteReplaceOutput{}, err
@@ -131,7 +137,7 @@ func (s *Server) noteReplace(ctx context.Context, _ *sdk.CallToolRequest, in Not
 	if forced {
 		message = "gandalf: note replace " + ref.String() + " (forced, append-only)"
 	}
-	s.record(message)
+	s.record(message, in.Reason)
 
 	return nil, NoteReplaceOutput{
 		NoteOutput: s.describe(ref, note),

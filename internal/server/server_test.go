@@ -81,9 +81,44 @@ func harnessFor(t *testing.T, withGit bool) *harness {
 	return &harness{t: t, client: session, vault: v, context: ctx}
 }
 
+// withReason fills in the reason a mutating tool requires, so a test about
+// something else does not have to state one.
+//
+// Only a struct argument is filled. A test that means to send a particular
+// reason — or none, to check that the requirement holds — passes a map, which
+// goes through untouched.
+func withReason(t *testing.T, args any) any {
+	t.Helper()
+
+	if args == nil {
+		return args
+	}
+	if _, ok := args.(map[string]any); ok {
+		return args
+	}
+
+	data, err := json.Marshal(args)
+	if err != nil {
+		t.Fatalf("marshal arguments: %v", err)
+	}
+
+	var fields map[string]any
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return args
+	}
+	if reason, ok := fields["reason"].(string); !ok || strings.TrimSpace(reason) != "" {
+		return args
+	}
+
+	fields["reason"] = "test"
+	return fields
+}
+
 // call invokes a tool and decodes its structured result into out.
 func (h *harness) call(name string, args any, out any) {
 	h.t.Helper()
+
+	args = withReason(h.t, args)
 
 	res, err := h.client.CallTool(h.context, &sdk.CallToolParams{Name: name, Arguments: args})
 	if err != nil {
@@ -108,6 +143,8 @@ func (h *harness) call(name string, args any, out any) {
 // callErr invokes a tool expecting it to fail, and returns the message.
 func (h *harness) callErr(name string, args any) string {
 	h.t.Helper()
+
+	args = withReason(h.t, args)
 
 	res, err := h.client.CallTool(h.context, &sdk.CallToolParams{Name: name, Arguments: args})
 	if err != nil {

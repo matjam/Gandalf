@@ -10,7 +10,8 @@ import (
 
 // NoteDeleteInput names the note to remove.
 type NoteDeleteInput struct {
-	Ref string `json:"ref"`
+	Ref    string `json:"ref"`
+	Reason string `json:"reason" jsonschema:"why this note is being removed, in a few words; it becomes the commit message"`
 }
 
 // NoteDeleteOutput reports what was removed, or why it was not.
@@ -29,6 +30,10 @@ type NoteDeleteOutput struct {
 // referrers come back in the error so the caller can fix them rather than
 // hunting for them.
 func (s *Server) noteDelete(ctx context.Context, _ *sdk.CallToolRequest, in NoteDeleteInput) (*sdk.CallToolResult, NoteDeleteOutput, error) {
+	if err := checkReason(in.Reason); err != nil {
+		return nil, NoteDeleteOutput{}, err
+	}
+
 	ref, path, err := s.writable(in.Ref)
 	if err != nil {
 		return nil, NoteDeleteOutput{}, err
@@ -67,7 +72,7 @@ func (s *Server) noteDelete(ctx context.Context, _ *sdk.CallToolRequest, in Note
 		return nil, NoteDeleteOutput{}, err
 	}
 
-	s.record("gandalf: note delete " + ref.String())
+	s.record("gandalf: note delete "+ref.String(), in.Reason)
 	return nil, NoteDeleteOutput{
 		Ref:     ref.String(),
 		Deleted: true,

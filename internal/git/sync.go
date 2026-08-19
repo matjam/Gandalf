@@ -54,7 +54,7 @@ func (r *Repo) SetRemote(url string) (Config, error) {
 	if url == "" {
 		// Drop the remote from git if it exists; ignore failure when absent.
 		_, _ = r.run("remote", "remove", cfg.RemoteName())
-		_ = r.commitLocked("gandalf: clear git remote")
+		_ = r.commitLocked("gandalf: clear git remote", "")
 		return cfg, nil
 	}
 
@@ -62,7 +62,7 @@ func (r *Repo) SetRemote(url string) (Config, error) {
 		return Config{}, err
 	}
 
-	_ = r.commitLocked("gandalf: configure git remote")
+	_ = r.commitLocked("gandalf: configure git remote", "")
 	return cfg, nil
 }
 
@@ -112,7 +112,7 @@ func (r *Repo) syncLocked(cfg Config) error {
 	}
 
 	// Commit anything still dirty so pull does not refuse a dirty tree.
-	if err := r.commitLocked("gandalf: sync checkpoint"); err != nil {
+	if err := r.commitLocked("gandalf: sync checkpoint", ""); err != nil {
 		return err
 	}
 

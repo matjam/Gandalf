@@ -55,7 +55,7 @@ func TestCommitRecordsChanges(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "note.md"), []byte("hello\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := repo.Commit("gandalf: note new note"); err != nil {
+	if err := repo.Commit("gandalf: note new note", ""); err != nil {
 		t.Fatalf("Commit: %v", err)
 	}
 
@@ -76,7 +76,7 @@ func TestCommitIsNoopWhenClean(t *testing.T) {
 	if err := repo.Ensure(); err != nil {
 		t.Fatalf("Ensure: %v", err)
 	}
-	if err := repo.Commit("nothing"); err != nil {
+	if err := repo.Commit("nothing", ""); err != nil {
 		t.Fatalf("Commit on clean tree: %v", err)
 	}
 }

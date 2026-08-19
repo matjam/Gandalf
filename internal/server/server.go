@@ -128,13 +128,34 @@ func (s *Server) WithGit(repo *git.Repo) *Server {
 // record commits the vault after a successful mutation. A commit failure is
 // logged and never returned: the note already landed, and a missing commit is
 // recoverable on the next change.
-func (s *Server) record(message string) {
+//
+// The message is generated and says which tool changed which note; the reason
+// is the caller's and says why. Both are needed to make the history readable:
+// the message alone gives a log of mechanical operations, and the reason alone
+// loses the distinction between an append and a replacement, which is the
+// distinction between adding to a note and overwriting part of it.
+func (s *Server) record(message, reason string) {
 	if s.git == nil {
 		return
 	}
-	if err := s.git.Commit(message); err != nil {
+	if err := s.git.Commit(message, reason); err != nil {
 		fmt.Fprintf(os.Stderr, "gandalf: git commit: %v\n", err)
 	}
+}
+
+// checkReason refuses a change that does not say why it is being made.
+//
+// It is required rather than optional because an optional field is the one a
+// model leaves out, and a history of "note replace project:gandalf:design"
+// twelve times over answers none of the questions history is asked.
+func checkReason(reason string) error {
+	if git.OneLine(reason) == "" {
+		return fmt.Errorf(
+			"a reason is required: say why this change is being made, in a few words. It becomes the " +
+				"commit message, so it is what explains this edit to whoever reads the history later. " +
+				"What changed and which note is recorded already")
+	}
+	return nil
 }
 
 // Close releases anything the server opened, stopping background indexing

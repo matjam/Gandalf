@@ -96,6 +96,7 @@ type SessionStartInput struct {
 	Title   string   `json:"title" jsonschema:"what this unit of work is about"`
 	Tags    []string `json:"tags,omitempty" jsonschema:"lowercase hyphenated tags"`
 	Related []string `json:"related,omitempty" jsonschema:"refs of related notes"`
+	Reason  string   `json:"reason" jsonschema:"why this change is being made, in a few words; it becomes the commit message"`
 }
 
 // SessionStartOutput is the created session note.
@@ -111,6 +112,10 @@ type SessionStartOutput struct {
 // work that slugify the same on one day are far likelier than a deliberate
 // request to start over, and overwriting would destroy the record.
 func (s *Server) sessionStart(ctx context.Context, _ *sdk.CallToolRequest, in SessionStartInput) (*sdk.CallToolResult, SessionStartOutput, error) {
+	if err := checkReason(in.Reason); err != nil {
+		return nil, SessionStartOutput{}, err
+	}
+
 	resolved := s.resolveLinks(in.Related, "")
 	if err := resolved.err(); err != nil {
 		return nil, SessionStartOutput{}, err
@@ -141,7 +146,7 @@ func (s *Server) sessionStart(ctx context.Context, _ *sdk.CallToolRequest, in Se
 		return nil, SessionStartOutput{}, err
 	}
 
-	s.record("gandalf: session start " + ref.String())
+	s.record("gandalf: session start "+ref.String(), in.Reason)
 	return nil, SessionStartOutput{Ref: ref.String(), Created: true}, nil
 }
 
@@ -157,6 +162,7 @@ type NoteNewInput struct {
 	Tags    []string `json:"tags,omitempty" jsonschema:"lowercase hyphenated tags"`
 	Related []string `json:"related,omitempty" jsonschema:"refs of related notes"`
 	Status  string   `json:"status,omitempty" jsonschema:"in-progress, complete, or superseded"`
+	Reason  string   `json:"reason" jsonschema:"why this change is being made, in a few words; it becomes the commit message"`
 }
 
 // noteNew creates a note, filing it by its category.
@@ -164,6 +170,10 @@ type NoteNewInput struct {
 // Sessions are excluded deliberately: session_start creates those,
 // setting the authorship and status the memory protocol expects.
 func (s *Server) noteNew(ctx context.Context, _ *sdk.CallToolRequest, in NoteNewInput) (*sdk.CallToolResult, NoteOutput, error) {
+	if err := checkReason(in.Reason); err != nil {
+		return nil, NoteOutput{}, err
+	}
+
 	kind := strings.TrimSpace(in.Kind)
 
 	cat, ok := s.vault.Categories().Lookup(kind)
@@ -209,7 +219,7 @@ func (s *Server) noteNew(ctx context.Context, _ *sdk.CallToolRequest, in NoteNew
 	}
 
 	ref := s.canonical(note.Path)
-	s.record("gandalf: note new " + ref.String())
+	s.record("gandalf: note new "+ref.String(), in.Reason)
 	return nil, s.describe(ref, note), nil
 }
 
@@ -218,12 +228,16 @@ type NoteAppendInput struct {
 	Ref     string `json:"ref"`
 	Content string `json:"content"`
 	Heading string `json:"heading,omitempty" jsonschema:"optional heading to add the content under"`
+	Reason  string `json:"reason" jsonschema:"why this change is being made, in a few words; it becomes the commit message"`
 }
 
 // noteAppend adds to a note's body.
 func (s *Server) noteAppend(ctx context.Context, _ *sdk.CallToolRequest, in NoteAppendInput) (*sdk.CallToolResult, NoteOutput, error) {
 	if strings.TrimSpace(in.Content) == "" {
 		return nil, NoteOutput{}, fmt.Errorf("nothing to append")
+	}
+	if err := checkReason(in.Reason); err != nil {
+		return nil, NoteOutput{}, err
 	}
 
 	ref, path, err := s.writable(in.Ref)
@@ -248,7 +262,7 @@ func (s *Server) noteAppend(ctx context.Context, _ *sdk.CallToolRequest, in Note
 		return nil, NoteOutput{}, err
 	}
 
-	s.record("gandalf: note append " + ref.String())
+	s.record("gandalf: note append "+ref.String(), in.Reason)
 	return nil, s.describe(ref, note), nil
 }
 
@@ -283,10 +297,15 @@ type NoteUpdateInput struct {
 	RemoveTags []string `json:"remove_tags,omitempty"`
 	AddRelated []string `json:"add_related,omitempty" jsonschema:"refs to link to this note"`
 	Status     string   `json:"status,omitempty" jsonschema:"in-progress, complete, or superseded"`
+	Reason     string   `json:"reason" jsonschema:"why this change is being made, in a few words; it becomes the commit message"`
 }
 
 // noteUpdate changes a note's metadata, never its body.
 func (s *Server) noteUpdate(ctx context.Context, _ *sdk.CallToolRequest, in NoteUpdateInput) (*sdk.CallToolResult, NoteOutput, error) {
+	if err := checkReason(in.Reason); err != nil {
+		return nil, NoteOutput{}, err
+	}
+
 	ref, path, err := s.writable(in.Ref)
 	if err != nil {
 		return nil, NoteOutput{}, err
@@ -322,7 +341,7 @@ func (s *Server) noteUpdate(ctx context.Context, _ *sdk.CallToolRequest, in Note
 		return nil, NoteOutput{}, err
 	}
 
-	s.record("gandalf: note update " + ref.String())
+	s.record("gandalf: note update "+ref.String(), in.Reason)
 	return nil, s.describe(ref, note), nil
 }
 

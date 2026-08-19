@@ -147,7 +147,10 @@ func (s *Server) correct(ctx context.Context, _ *sdk.CallToolRequest, in Correct
 		out.History = historyRef
 	}
 
-	s.record("gandalf: correct " + ref.String())
+	// The guidance is the reason: a correction's why is the rule it records,
+	// and CorrectInput's own Reason is what prompted it, which belongs in the
+	// history rather than in the commit.
+	s.record("gandalf: correct "+ref.String(), in.Guidance)
 	return nil, out, nil
 }
 

@@ -21,6 +21,12 @@ var (
 const (
 	recordSep = "\x1e"
 	fieldSep  = "\x1f"
+
+	// headerEnd closes the formatted part of a record, so the file list below
+	// it can be told apart from a commit body of any shape. Gandalf writes a
+	// single-line body, but a commit made by hand can hold anything —
+	// including lines that read exactly like a file list.
+	headerEnd = "\x02"
 )
 
 // Change is what a commit did to one file.
@@ -53,7 +59,13 @@ type Entry struct {
 	Commit  string
 	Date    string
 	Message string
-	Files   []File
+
+	// Reason is why the change was made, as given by whoever asked for it. It
+	// is the commit body, and is empty for a commit Gandalf made on its own
+	// behalf or for one made before reasons were recorded.
+	Reason string
+
+	Files []File
 }
 
 // Available reports whether this repo can answer questions about history.
@@ -101,8 +113,11 @@ func (r *Repo) log(limit int, from, notePath string) ([]Entry, error) {
 	// construction: same frontmatter fields, same heading shape, often only a
 	// few lines of prose. At git's default of 50% two unrelated notes pair
 	// readily, and a note's history would then be somebody else's.
+	// The body carries the reason for the change. It is bounded by headerEnd
+	// rather than by being assumed to fit on one line, because the bodies of
+	// commits Gandalf did not write are not Gandalf's to assume anything about.
 	args := []string{"-c", "core.quotePath=false", "log", "--name-status", "-M90%",
-		"--pretty=format:" + recordSep + "%h" + fieldSep + "%aI" + fieldSep + "%s"}
+		"--pretty=format:" + recordSep + "%h" + fieldSep + "%aI" + fieldSep + "%s" + fieldSep + "%b" + headerEnd}
 	if notePath != "" {
 		args = append(args, "--follow")
 	}
@@ -159,14 +174,21 @@ func parseLog(out string) []Entry {
 			continue
 		}
 
-		lines := strings.Split(record, "\n")
-		fields := strings.SplitN(lines[0], fieldSep, 3)
+		header, files, _ := strings.Cut(record, headerEnd)
+
+		fields := strings.SplitN(header, fieldSep, 4)
 		if len(fields) < 3 {
 			continue
 		}
 
 		entry := Entry{Commit: fields[0], Date: fields[1], Message: fields[2]}
-		for _, line := range lines[1:] {
+		if len(fields) == 4 {
+			// A commit Gandalf made carries a single-line reason. One made by
+			// hand can carry paragraphs, and is reported as the one line they
+			// reduce to rather than being allowed to look like structure.
+			entry.Reason = OneLine(fields[3])
+		}
+		for _, line := range strings.Split(files, "\n") {
 			if file, ok := parseNameStatus(line); ok {
 				entry.Files = append(entry.Files, file)
 			}
@@ -181,7 +203,7 @@ func parseLog(out string) []Entry {
 // two paths, old then new; everything else carries one.
 func parseNameStatus(line string) (File, bool) {
 	parts := strings.Split(strings.TrimRight(line, "\r"), "\t")
-	if len(parts) < 2 || parts[0] == "" {
+	if len(parts) < 2 || !isStatus(parts[0]) {
 		return File{}, false
 	}
 
@@ -202,6 +224,24 @@ func parseNameStatus(line string) (File, bool) {
 	default:
 		return File{Change: ChangeModified, Path: parts[1]}, true
 	}
+}
+
+// isStatus reports whether a field is a --name-status code: a letter, and for
+// a rename or copy a similarity score after it.
+//
+// The file list is already bounded by headerEnd, so this is the second of two
+// checks rather than the only one. It costs nothing and keeps a malformed line
+// from being reported as a file the commit touched.
+func isStatus(field string) bool {
+	if field == "" || !strings.ContainsRune("ACDMRTUXB", rune(field[0])) {
+		return false
+	}
+	for _, r := range field[1:] {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // PathAt returns the path a note held at a commit, and whether the note
