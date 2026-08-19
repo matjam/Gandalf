@@ -17,7 +17,7 @@ import (
 // the whole body. Frontmatter is not reachable from here at all: it is
 // Gandalf's, and note_update is how metadata changes.
 type NoteReplaceInput struct {
-	Ref     string `json:"ref"`
+	Ref     string `json:"ref" jsonschema:"the note's ref, as returned by another tool"`
 	Content string `json:"content" jsonschema:"the replacement text; empty removes the span"`
 
 	Section        string `json:"section,omitempty" jsonschema:"the heading whose section to rewrite, such as Verification"`

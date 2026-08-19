@@ -152,8 +152,8 @@ func (s *Server) sessionStart(ctx context.Context, _ *sdk.CallToolRequest, in Se
 
 // NoteNewInput describes a note to create.
 type NoteNewInput struct {
-	Kind  string `json:"kind" jsonschema:"the category to file this note under; see category_list"`
-	Title string `json:"title"`
+	Kind  string `json:"kind" jsonschema:"the category to file this note under, singular or plural; see category_list"`
+	Title string `json:"title" jsonschema:"the note's heading, and what its filename is derived from"`
 
 	Scope string `json:"scope,omitempty" jsonschema:"required for scoped categories, such as the project name"`
 	Facet string `json:"facet,omitempty" jsonschema:"required for scoped categories, such as design or decisions"`
@@ -176,7 +176,7 @@ func (s *Server) noteNew(ctx context.Context, _ *sdk.CallToolRequest, in NoteNew
 
 	kind := strings.TrimSpace(in.Kind)
 
-	cat, ok := s.vault.Categories().Lookup(kind)
+	cat, ok := s.categoryFor(kind)
 	switch {
 	case !ok:
 		return nil, NoteOutput{}, fmt.Errorf("unknown category %q (want one of %s)",
@@ -225,8 +225,8 @@ func (s *Server) noteNew(ctx context.Context, _ *sdk.CallToolRequest, in NoteNew
 
 // NoteAppendInput describes content to add to a note.
 type NoteAppendInput struct {
-	Ref     string `json:"ref"`
-	Content string `json:"content"`
+	Ref     string `json:"ref" jsonschema:"the note's ref, as returned by another tool"`
+	Content string `json:"content" jsonschema:"the text to add, in markdown; it goes above the maintained backlinks block"`
 	Heading string `json:"heading,omitempty" jsonschema:"optional heading to add the content under"`
 	Reason  string `json:"reason" jsonschema:"why this change is being made, in a few words; it becomes the commit message"`
 }
@@ -289,15 +289,16 @@ func (s *Server) write(note *vault.Note) error {
 
 // NoteUpdateInput describes metadata changes.
 type NoteUpdateInput struct {
-	Ref string `json:"ref"`
+	Ref string `json:"ref" jsonschema:"the note's ref, as returned by another tool"`
 
-	// AddTags and RemoveTags are additive and subtractive so that a caller
-	// need not restate the whole list, which is how tags get lost.
-	AddTags    []string `json:"add_tags,omitempty"`
-	RemoveTags []string `json:"remove_tags,omitempty"`
-	AddRelated []string `json:"add_related,omitempty" jsonschema:"refs to link to this note"`
-	Status     string   `json:"status,omitempty" jsonschema:"in-progress, complete, or superseded"`
-	Reason     string   `json:"reason" jsonschema:"why this change is being made, in a few words; it becomes the commit message"`
+	// Each list is additive and subtractive so that a caller need not restate
+	// the whole of it, which is how entries get lost.
+	AddTags       []string `json:"add_tags,omitempty" jsonschema:"lowercase hyphenated tags to add"`
+	RemoveTags    []string `json:"remove_tags,omitempty" jsonschema:"tags to drop"`
+	AddRelated    []string `json:"add_related,omitempty" jsonschema:"refs to link to this note"`
+	RemoveRelated []string `json:"remove_related,omitempty" jsonschema:"related links to drop, given as the ref they read as or as the text the note holds; this is how a link to a note that no longer exists is removed"`
+	Status        string   `json:"status,omitempty" jsonschema:"in-progress, complete, or superseded"`
+	Reason        string   `json:"reason" jsonschema:"why this change is being made, in a few words; it becomes the commit message"`
 }
 
 // noteUpdate changes a note's metadata, never its body.
@@ -330,7 +331,7 @@ func (s *Server) noteUpdate(ctx context.Context, _ *sdk.CallToolRequest, in Note
 	}
 
 	note.FM.Tags = add(remove(note.FM.Tags, in.RemoveTags), in.AddTags)
-	note.FM.Related = add(note.FM.Related, resolved.Related)
+	note.FM.Related = add(s.dropRelated(note.FM.Related, in.RemoveRelated), resolved.Related)
 	note.Touch(schema.Today())
 
 	if issues := note.FM.Validate(); schema.HasErrors(issues) {
@@ -381,6 +382,36 @@ func add(existing, values []string) []string {
 		}
 	}
 	return existing
+}
+
+// dropRelated removes related entries, matching either the text the note holds
+// or the ref that text reads as.
+//
+// Matching is textual, and deliberately so. The entries most worth removing are
+// the ones pointing at notes that no longer exist, and resolving is exactly what
+// fails for those: add_related refuses a link it cannot resolve, which is right
+// for a new link and would make a stale one permanent.
+func (s *Server) dropRelated(existing, values []string) []string {
+	if len(values) == 0 {
+		return existing
+	}
+
+	drop := make(map[string]bool, len(values))
+	for _, v := range values {
+		if v = strings.TrimSpace(v); v != "" {
+			drop[v] = true
+		}
+	}
+
+	refs := s.refsFor(existing)
+	kept := existing[:0]
+	for i, target := range existing {
+		if drop[target] || drop[refs[i]] {
+			continue
+		}
+		kept = append(kept, target)
+	}
+	return kept
 }
 
 // remove drops the given values.

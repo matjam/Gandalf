@@ -15,7 +15,7 @@ import (
 type SearchInput struct {
 	Query string `json:"query" jsonschema:"what you are looking for, in your own words"`
 
-	Kinds []string `json:"kinds,omitempty" jsonschema:"restrict to these categories, such as session or standard"`
+	Kinds []string `json:"kinds,omitempty" jsonschema:"restrict to these categories, by either singular or plural name, such as session or standards"`
 
 	Limit int `json:"limit,omitempty" jsonschema:"maximum results; defaults to 10"`
 }
@@ -95,7 +95,7 @@ func (s *Server) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchIn
 
 	results, err := store.Search(ctx, s.embedder, index.Query{
 		Text:  in.Query,
-		Kinds: in.Kinds,
+		Kinds: s.canonicalKinds(in.Kinds),
 		Limit: in.Limit,
 	})
 	if err != nil {

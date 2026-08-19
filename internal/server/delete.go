@@ -10,7 +10,7 @@ import (
 
 // NoteDeleteInput names the note to remove.
 type NoteDeleteInput struct {
-	Ref    string `json:"ref"`
+	Ref    string `json:"ref" jsonschema:"the note's ref, as returned by another tool"`
 	Reason string `json:"reason" jsonschema:"why this note is being removed, in a few words; it becomes the commit message"`
 }
 

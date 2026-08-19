@@ -17,7 +17,7 @@ import (
 
 // ListInput selects what to enumerate.
 type ListInput struct {
-	Kind string `json:"kind" jsonschema:"what to list; the categories this vault declares, plus topics and all"`
+	Kind string `json:"kind" jsonschema:"what to list; a category this vault declares, by either its singular or plural name, plus topics and all"`
 
 	Scope string `json:"scope,omitempty" jsonschema:"restrict to one scope of a scoped category, such as a project name"`
 
@@ -108,11 +108,15 @@ func (s *Server) list(ctx context.Context, _ *sdk.CallToolRequest, in ListInput)
 		return nil, out, nil
 	}
 
-	cat, ok := s.vault.Categories().ByPlural(kind)
+	cat, ok := s.categoryFor(kind)
 	if !ok {
 		return nil, ListOutput{}, fmt.Errorf("unknown kind %q (want one of %s)",
 			in.Kind, strings.Join(s.listNames(), ", "))
 	}
+
+	// Whichever form was asked for, report the plural, so a caller storing the
+	// answer gets one spelling rather than an echo of what it sent.
+	out.Kind = cat.Plural
 
 	// A scoped category is summarised by scope rather than by note: what a
 	// caller wants from "projects" is which projects exist, not three rows per

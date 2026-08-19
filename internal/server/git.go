@@ -9,9 +9,7 @@ import (
 
 // GitRemoteInput configures the vault's git remote.
 type GitRemoteInput struct {
-	// URL is the remote repository URL. Pass an empty string to clear it and
-	// stop push/pull while keeping local commits.
-	URL string `json:"url"`
+	URL string `json:"url" jsonschema:"the remote repository URL; pass an empty string to clear it, which stops push and pull while local commits continue"`
 }
 
 // GitRemoteOutput reports the resulting configuration.

@@ -60,6 +60,41 @@ func (s *Server) categoryList(ctx context.Context, _ *sdk.CallToolRequest, _ Cat
 	return nil, out, nil
 }
 
+// categoryFor resolves a category by either name it answers to: the singular a
+// note is filed under, or the plural a listing asks for.
+//
+// The two forms were split across the surface. list took the plural, note_new
+// and search took the singular, and neither schema said which it wanted, so a
+// caller could only find the difference by getting it wrong. Both work
+// everywhere now; the singular is tried first because that is the name a ref
+// carries.
+func (s *Server) categoryFor(kind string) (category.Category, bool) {
+	kind = strings.TrimSpace(kind)
+	if cat, ok := s.vault.Categories().Lookup(kind); ok {
+		return cat, true
+	}
+	return s.vault.Categories().ByPlural(kind)
+}
+
+// canonicalKinds maps a search filter onto the names the index stores, which
+// are the singular ones. A value naming no category is passed through
+// unchanged, matching nothing, as it did before.
+func (s *Server) canonicalKinds(kinds []string) []string {
+	if len(kinds) == 0 {
+		return kinds
+	}
+
+	out := make([]string, 0, len(kinds))
+	for _, kind := range kinds {
+		if cat, ok := s.categoryFor(kind); ok {
+			out = append(out, cat.Name)
+			continue
+		}
+		out = append(out, kind)
+	}
+	return out
+}
+
 // CategoryCreateInput declares a new kind of note.
 type CategoryCreateInput struct {
 	Name   string `json:"name" jsonschema:"singular, lowercase and hyphenated; used as the first field of a ref"`
@@ -128,7 +163,7 @@ func (s *Server) categoryCreate(ctx context.Context, _ *sdk.CallToolRequest, in 
 
 // CategoryNameInput names an existing category.
 type CategoryNameInput struct {
-	Name   string `json:"name"`
+	Name   string `json:"name" jsonschema:"the category's singular name, as category_list reports it"`
 	Reason string `json:"reason" jsonschema:"why the vault is changing shape this way, in a few words; it becomes the commit message"`
 }
 

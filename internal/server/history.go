@@ -169,7 +169,7 @@ func (s *Server) vaultCommits(entries []git.Entry) []CommitOutput {
 
 // NoteVersionInput selects a past version of a note.
 type NoteVersionInput struct {
-	Ref    string `json:"ref"`
+	Ref    string `json:"ref" jsonschema:"the note's ref, as returned by another tool"`
 	Commit string `json:"commit" jsonschema:"the commit to read the note at, as returned by history"`
 }
 
@@ -236,7 +236,7 @@ func (s *Server) noteVersion(ctx context.Context, _ *sdk.CallToolRequest, in Not
 
 // NoteDiffInput selects two versions of a note to compare.
 type NoteDiffInput struct {
-	Ref  string `json:"ref"`
+	Ref  string `json:"ref" jsonschema:"the note's ref, as returned by another tool"`
 	From string `json:"from" jsonschema:"the older commit"`
 	To   string `json:"to,omitempty" jsonschema:"the newer commit; omit to compare against the note as it stands now"`
 }
@@ -301,7 +301,7 @@ func (s *Server) noteDiff(ctx context.Context, _ *sdk.CallToolRequest, in NoteDi
 
 // NoteRestoreInput selects the version to put back.
 type NoteRestoreInput struct {
-	Ref    string `json:"ref"`
+	Ref    string `json:"ref" jsonschema:"the note's ref, as returned by another tool"`
 	Commit string `json:"commit" jsonschema:"the commit to restore the note from, as returned by history"`
 
 	Reason string `json:"reason" jsonschema:"why this version is being put back, in a few words; it becomes the commit message"`
