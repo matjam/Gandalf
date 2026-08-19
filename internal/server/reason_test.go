@@ -101,6 +101,10 @@ func TestChangingTheVaultNeedsAReason(t *testing.T) {
 		{"note_update", map[string]any{"ref": note.Ref, "add_tags": []string{"versioning"}}},
 		{"note_delete", map[string]any{"ref": note.Ref}},
 		{"note_restore", map[string]any{"ref": note.Ref, "commit": "HEAD"}},
+		{"category_create", map[string]any{
+			"name": "incident", "plural": "incidents", "rule": "dated",
+			"folder": "Incidents", "description": "Something broke and why.",
+		}},
 		{"category_retire", map[string]any{"name": "meeting"}},
 		{"category_delete", map[string]any{"name": "meeting"}},
 	}

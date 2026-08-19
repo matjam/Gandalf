@@ -76,6 +76,8 @@ type CategoryCreateInput struct {
 	Template    string   `json:"template,omitempty" jsonschema:"the body a new note starts with, below its heading"`
 
 	Mutability string `json:"mutability,omitempty" jsonschema:"append-only for a chronological record such as a log, replaceable for a note describing current state; defaults to append-only"`
+
+	Reason string `json:"reason" jsonschema:"why the vault is changing shape this way, in a few words; it becomes the commit message"`
 }
 
 // CategoryChangeOutput reports the resulting category.
@@ -86,6 +88,10 @@ type CategoryChangeOutput struct {
 
 // categoryCreate declares a new category.
 func (s *Server) categoryCreate(ctx context.Context, _ *sdk.CallToolRequest, in CategoryCreateInput) (*sdk.CallToolResult, CategoryChangeOutput, error) {
+	if err := checkReason(in.Reason); err != nil {
+		return nil, CategoryChangeOutput{}, err
+	}
+
 	cat := category.Category{
 		Name:        strings.TrimSpace(in.Name),
 		Plural:      strings.TrimSpace(in.Plural),
@@ -116,9 +122,7 @@ func (s *Server) categoryCreate(ctx context.Context, _ *sdk.CallToolRequest, in 
 		return nil, CategoryChangeOutput{}, err
 	}
 
-	// The description is the reason: a new category's why is what it is for,
-	// which the caller has already had to state.
-	s.record("gandalf: category create "+cat.Name, cat.Description)
+	s.record("gandalf: category create "+cat.Name, in.Reason)
 	return nil, CategoryChangeOutput{Category: view(cat, 0)}, nil
 }
 
