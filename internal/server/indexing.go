@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -69,6 +70,11 @@ type indexer struct {
 
 	started bool
 
+	// cancel stops the pass. Shutdown has to be able to reach the goroutine:
+	// closing the index while it is still writing leaves the store open on
+	// Windows, where an open handle blocks the file being removed at all.
+	cancel context.CancelFunc
+
 	// ready closes when the first full pass finishes, successfully or not, so
 	// a caller can wait for it with a deadline rather than polling.
 	ready chan struct{}
@@ -86,13 +92,20 @@ func (s *Server) startIndexing(ctx context.Context) {
 		return
 	}
 
+	// The pass outlives the request that started it — a caller giving up on one
+	// search must not discard the indexing done so far — so it gets a context
+	// detached from the caller's, with its own cancel for shutdown to use.
+	ctx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+
 	s.indexer.mu.Lock()
 	if s.indexer.started {
 		s.indexer.mu.Unlock()
+		cancel()
 		return
 	}
 	s.indexer.started = true
 	s.indexer.state = IndexBuilding
+	s.indexer.cancel = cancel
 	s.indexer.mu.Unlock()
 
 	go func() {
@@ -117,9 +130,18 @@ func (s *Server) startIndexing(ctx context.Context) {
 }
 
 // finish records the outcome of the first pass.
+//
+// Cancellation is shutdown, not failure: reporting it as a failed index would
+// put an alarming error in front of the next session over a server that simply
+// stopped.
 func (i *indexer) finish(err error) {
 	i.mu.Lock()
 	defer i.mu.Unlock()
+
+	if errors.Is(err, context.Canceled) {
+		i.state = IndexBuilding
+		return
+	}
 
 	i.err = err
 	if err != nil {
@@ -127,6 +149,25 @@ func (i *indexer) finish(err error) {
 		return
 	}
 	i.state = IndexReady
+}
+
+// stopIndexing cancels the background pass and waits for it to stop.
+//
+// Waiting is the point. Closing the index out from under a goroutine still
+// writing to it leaves a handle open, which on Windows means the file cannot
+// be deleted — a temporary vault then outlives the test that made it.
+func (s *Server) stopIndexing() {
+	s.indexer.mu.Lock()
+	started, cancel := s.indexer.started, s.indexer.cancel
+	s.indexer.mu.Unlock()
+
+	if !started {
+		return
+	}
+	if cancel != nil {
+		cancel()
+	}
+	<-s.indexer.ready
 }
 
 // status reports what the index is doing.
@@ -184,10 +225,7 @@ var indexWait = 10 * time.Second
 // search returns partial results rather than blocking a session on a cold
 // index. Reporting a partial answer honestly beats a call that never returns.
 func (s *Server) awaitIndex(ctx context.Context) {
-	// The background pass outlives the request that triggered it: a caller
-	// giving up on one search must not throw away the indexing work done so
-	// far, or every search restarts the same cold build.
-	s.startIndexing(context.WithoutCancel(ctx))
+	s.startIndexing(ctx)
 
 	timer := time.NewTimer(indexWait)
 	defer timer.Stop()

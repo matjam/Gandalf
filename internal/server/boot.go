@@ -65,7 +65,7 @@ func (s *Server) boot(ctx context.Context, _ *sdk.CallToolRequest, _ BootInput) 
 	// Boot is the first call of a session, which makes it the right moment to
 	// start indexing: the work happens while the model is reading the contract
 	// rather than when it first tries to search.
-	s.startIndexing(context.WithoutCancel(ctx))
+	s.startIndexing(ctx)
 
 	out := BootOutput{
 		Vault:   s.vault.Root(),

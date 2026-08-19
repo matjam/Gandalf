@@ -324,3 +324,63 @@ func swapIndexWait(d time.Duration) func() {
 	indexWait = d
 	return func() { indexWait = previous }
 }
+
+// TestCloseStopsBackgroundIndexing pins that shutdown waits for the indexer.
+//
+// Closing the store while the background pass is still writing leaves a handle
+// open. On Unix the file can still be unlinked so nothing looks wrong; on
+// Windows the vault directory then cannot be removed at all, which is how this
+// was found.
+func TestCloseStopsBackgroundIndexing(t *testing.T) {
+	v, err := vault.Open(t.TempDir())
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if _, err := instructions.Seed(v, schema.Today(), false); err != nil {
+		t.Fatalf("Seed: %v", err)
+	}
+
+	// Slow enough that the pass is certainly still running at Close.
+	s := WithSearch(v, "test", slowEmbedder{delay: 50 * time.Millisecond})
+	s.startIndexing(context.Background())
+
+	done := make(chan error, 1)
+	go func() { done <- s.Close() }()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Errorf("Close: %v", err)
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("Close did not return; it is waiting on an indexer that was never cancelled")
+	}
+
+	// The goroutine must be finished, not merely asked to stop, or the store
+	// is closed underneath a live writer.
+	select {
+	case <-s.indexer.ready:
+	default:
+		t.Error("Close returned while the indexing pass was still running")
+	}
+}
+
+// TestCloseWithoutIndexingReturns guards the case where no pass ever started:
+// waiting on a channel nobody will close would hang shutdown forever.
+func TestCloseWithoutIndexingReturns(t *testing.T) {
+	v, err := vault.Open(t.TempDir())
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+
+	s := New(v, "test")
+
+	done := make(chan error, 1)
+	go func() { done <- s.Close() }()
+
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("Close hung with no indexing in progress")
+	}
+}

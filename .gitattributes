@@ -1,0 +1,8 @@
+# Normalise line endings to LF in the working tree, on every platform.
+#
+# The instruction set is compiled into the binary with go:embed. A CRLF
+# checkout would embed CRLF documents, seed them into a vault, and then fail to
+# recognise them: reading a note back normalises the line endings away, so the
+# stored seed fingerprint could never match and every shipped document would
+# report as modified for ever. That is exactly what happened on Windows CI.
+* text=auto eol=lf

@@ -106,8 +106,12 @@ func (s *Server) record(message string) {
 	}
 }
 
-// Close releases anything the server opened.
-func (s *Server) Close() error { return s.closeIndex() }
+// Close releases anything the server opened, stopping background indexing
+// before the index it writes to is closed.
+func (s *Server) Close() error {
+	s.stopIndexing()
+	return s.closeIndex()
+}
 
 // MCP builds the MCP server with every tool registered.
 func (s *Server) MCP() *sdk.Server {

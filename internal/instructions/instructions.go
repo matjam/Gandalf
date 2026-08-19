@@ -116,6 +116,14 @@ func (d Doc) Hash() (string, error) {
 // ignored so that the normalisation applied when a note is written does not
 // register as an edit by the user.
 func HashBody(body string) string {
+	// Line endings are normalised first. A document written with CRLF comes
+	// back with LF, because reading a note splits and rejoins its lines, so
+	// hashing the raw bytes would make a round-trip look like an edit and
+	// report every shipped document as modified. Hashing what the text says
+	// rather than how it was encoded is the only comparison that survives a
+	// checkout on a platform that does not agree about newlines.
+	body = strings.ReplaceAll(body, "\r\n", "\n")
+
 	sum := sha256.Sum256([]byte(strings.TrimSpace(body)))
 	return hex.EncodeToString(sum[:])[:16]
 }
