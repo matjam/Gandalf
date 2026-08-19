@@ -75,6 +75,37 @@ func (s *Server) hasRead(ref vault.Ref) bool {
 	return s.read[ref.String()]
 }
 
+// markVersionRead records that a past version of a note has been seen.
+//
+// It is keyed to the commit rather than to the note, because restoring is
+// gated on having looked at the version being restored. Having read what the
+// note says now tells a caller nothing about what it is about to say.
+func (s *Server) markVersionRead(ref vault.Ref, commit string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.read == nil {
+		s.read = map[string]bool{}
+	}
+	s.read[versionKey(ref, commit)] = true
+}
+
+// hasReadVersion reports whether a note's version at a commit has been read
+// during this connection.
+func (s *Server) hasReadVersion(ref vault.Ref, commit string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return s.read[versionKey(ref, commit)]
+}
+
+// versionKey names one version of one note. The commit is the abbreviated
+// hash git resolved, so a caller that read HEAD~2 and then restored the full
+// hash of the same commit is recognised as having read it.
+func versionKey(ref vault.Ref, commit string) string {
+	return ref.String() + "@" + commit
+}
+
 // New returns a server over the given vault, without search.
 func New(v *vault.Vault, version string) *Server {
 	return &Server{vault: v, name: "gandalf", version: version, indexer: newIndexer()}
@@ -228,6 +259,35 @@ func (s *Server) MCP() *sdk.Server {
 			"owns that kind of guidance. Call this in the same reply as applying the " +
 			"correction, so it survives the session.",
 	}, s.correct)
+
+	sdk.AddTool(srv, &sdk.Tool{
+		Name: "history",
+		Description: "List what has changed, newest first: the commits behind one note when given " +
+			"a ref, or every change to the vault when not. Returns the commit each change was " +
+			"made in, which note_version, note_diff, and note_restore all take.",
+	}, s.history)
+
+	sdk.AddTool(srv, &sdk.Tool{
+		Name: "note_version",
+		Description: "Read a note as it stood at a commit, without changing anything. Use it to " +
+			"see what a note said before an edit, and to check a version before putting it back — " +
+			"note_restore refuses a version that has not been read here first.",
+	}, s.noteVersion)
+
+	sdk.AddTool(srv, &sdk.Tool{
+		Name: "note_diff",
+		Description: "Show what changed in a note between two commits, or between a commit and " +
+			"what the note says now. Prefer this to reading two whole versions when the question " +
+			"is what moved.",
+	}, s.noteDiff)
+
+	sdk.AddTool(srv, &sdk.Tool{
+		Name: "note_restore",
+		Description: "Put a past version of a note back, as a new commit that leaves the history " +
+			"intact. Read the version with note_version first. Restoring a note that is a " +
+			"chronological record, such as a session or a decisions log, discards what was added " +
+			"since and needs force.",
+	}, s.noteRestore)
 
 	sdk.AddTool(srv, &sdk.Tool{
 		Name: "git_remote",

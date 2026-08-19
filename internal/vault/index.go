@@ -217,6 +217,27 @@ func (v *Vault) RebuildBacklinks() ([]string, error) {
 	return changed, nil
 }
 
+// Unresolved returns the link targets that name no note in the vault.
+//
+// Resolution matches how a link is read everywhere else — a full path or a
+// bare filename, as Obsidian accepts — so a caller asking whether a note's
+// links are dead gets the same answer lint would give.
+func (v *Vault) Unresolved(targets []string) ([]string, error) {
+	paths, err := v.List()
+	if err != nil {
+		return nil, err
+	}
+	resolver := newIndex(paths)
+
+	var dead []string
+	for _, target := range targets {
+		if resolver.resolve(target) == "" {
+			dead = append(dead, target)
+		}
+	}
+	return dead, nil
+}
+
 // Referrers returns the notes linking to the given path, as vault paths.
 func (v *Vault) Referrers(notePath string) ([]string, error) {
 	idx, err := v.BuildLinkIndex()

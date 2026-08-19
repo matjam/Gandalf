@@ -120,6 +120,27 @@ func (r *Repo) isRepoUnlocked() bool {
 	return err == nil && info.IsDir()
 }
 
+// runRaw executes git in the vault root and returns stdout untouched, keeping
+// stderr separate. File content comes back through here rather than through
+// run: a note's trailing newline is content, and trimming it would make every
+// restored note differ from the one that was committed.
+func (r *Repo) runRaw(args ...string) ([]byte, error) {
+	cmd := exec.Command("git", args...)
+	cmd.Dir = r.root
+
+	var out, errs bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &errs
+
+	if err := cmd.Run(); err != nil {
+		if msg := strings.TrimSpace(errs.String()); msg != "" {
+			return nil, fmt.Errorf("%w: %s", err, msg)
+		}
+		return nil, err
+	}
+	return out.Bytes(), nil
+}
+
 // run executes git in the vault root and returns combined output.
 func (r *Repo) run(args ...string) (string, error) {
 	cmd := exec.Command("git", args...)

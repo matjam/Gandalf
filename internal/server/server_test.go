@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/matjam/gandalf/internal/git"
 	"github.com/matjam/gandalf/internal/instructions"
 	"github.com/matjam/gandalf/internal/schema"
 	"github.com/matjam/gandalf/internal/vault"
@@ -26,6 +28,16 @@ type harness struct {
 }
 
 func newHarness(t *testing.T) *harness {
+	return harnessFor(t, false)
+}
+
+// newGitHarness is a harness whose vault is a git repository, which is what
+// the history tools need and what a real vault always is.
+func newGitHarness(t *testing.T) *harness {
+	return harnessFor(t, true)
+}
+
+func harnessFor(t *testing.T, withGit bool) *harness {
 	t.Helper()
 
 	v, err := vault.Open(t.TempDir())
@@ -36,10 +48,22 @@ func newHarness(t *testing.T) *harness {
 		t.Fatalf("Seed: %v", err)
 	}
 
+	s := New(v, "test")
+	if withGit {
+		if _, err := exec.LookPath("git"); err != nil {
+			t.Skip("git not available")
+		}
+		repo := git.Open(v.Root())
+		if err := repo.Ensure(); err != nil {
+			t.Fatalf("Ensure: %v", err)
+		}
+		s = s.WithGit(repo)
+	}
+
 	ctx := context.Background()
 	serverTransport, clientTransport := sdk.NewInMemoryTransports()
 
-	srv := New(v, "test").MCP()
+	srv := s.MCP()
 	go func() {
 		if err := srv.Run(ctx, serverTransport); err != nil {
 			// The transport closes when the test finishes; that is not a failure.
