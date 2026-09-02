@@ -145,10 +145,25 @@ func WithSearch(v *vault.Vault, version string, embedder embed.Embedder) *Server
 }
 
 // WithGit returns a server that commits every vault mutation and can sync a
-// configured remote. The repo is also what StartSync on the repo itself uses.
+// configured remote through StartSync.
 func (s *Server) WithGit(repo *git.Repo) *Server {
 	s.git = repo
 	return s
+}
+
+// StartSync pulls from and pushes to the vault's remote on its configured
+// interval, until ctx is cancelled. Without git it does nothing.
+//
+// The phases of a sync that touch the working tree run under the write lock,
+// so a sync can neither sweep a half-written note into its checkpoint commit
+// nor rewrite a note a tool is in the middle of changing. The phases that
+// talk to the network run outside it, so a stalled remote never holds up a
+// write.
+func (c *Core) StartSync(ctx context.Context) {
+	if c.git == nil {
+		return
+	}
+	c.git.StartSync(ctx, &c.write)
 }
 
 // Session returns a server for one new connection to the same vault.

@@ -2,12 +2,15 @@ package git
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 )
 
 // Repo is a vault root that Gandalf maintains as a git repository.
@@ -134,8 +137,46 @@ func (r *Repo) isRepoUnlocked() bool {
 // run: a note's trailing newline is content, and trimming it would make every
 // restored note differ from the one that was committed.
 func (r *Repo) runRaw(args ...string) ([]byte, error) {
-	cmd := exec.Command("git", args...)
+	return r.execute(context.Background(), nil, args...)
+}
+
+// runNetwork executes a git command that talks to the remote, and returns
+// what it wrote to stdout, trimmed.
+//
+// It differs from run in two ways, both following from the same fact: a
+// command holding a network connection can stall for as long as the far end
+// or an interactive prompt likes. So the command is given a deadline and
+// killed when it passes, and git is told never to prompt on the terminal —
+// there is no terminal behind a server, and a prompt would wait forever for
+// an answer that cannot come.
+func (r *Repo) runNetwork(ctx context.Context, args ...string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, networkTimeout)
+	defer cancel()
+
+	out, err := r.execute(ctx, []string{"GIT_TERMINAL_PROMPT=0"}, args...)
+	if err != nil {
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return "", fmt.Errorf("gave up after %s: %w", networkTimeout, context.DeadlineExceeded)
+		}
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+// execute runs git in the vault root with extra environment, returning stdout
+// untouched and folding stderr into the error. The command is killed when ctx
+// ends.
+func (r *Repo) execute(ctx context.Context, env []string, args ...string) ([]byte, error) {
+	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = r.root
+	if len(env) > 0 {
+		cmd.Env = append(os.Environ(), env...)
+	}
+
+	// Killing git does not kill the ssh it may have spawned, and an orphan
+	// still holding the output pipes would keep Wait blocked past the
+	// deadline it was meant to enforce.
+	cmd.WaitDelay = 5 * time.Second
 
 	var out, errs bytes.Buffer
 	cmd.Stdout = &out

@@ -25,7 +25,11 @@ type GitRemoteOutput struct {
 // this is the one git decision a model is allowed to make.
 func (s *Server) gitRemote(ctx context.Context, _ *sdk.CallToolRequest, in GitRemoteInput) (*sdk.CallToolResult, GitRemoteOutput, error) {
 	unlock := s.beginWrite()
-	defer unlock()
+	defer func() {
+		if unlock != nil {
+			unlock()
+		}
+	}()
 
 	if s.git == nil {
 		return nil, GitRemoteOutput{}, fmt.Errorf(
@@ -45,12 +49,19 @@ func (s *Server) gitRemote(ctx context.Context, _ *sdk.CallToolRequest, in GitRe
 	}
 	if cfg.URL == "" {
 		out.Note = "remote cleared; local commits continue, push and pull are idle until a URL is set again"
-	} else {
-		out.Note = "remote configured; the server will pull (remote-wins on conflict) and push on its sync interval"
-		// Try an immediate sync so a bad URL surfaces now rather than later.
-		if err := s.git.Sync(); err != nil {
-			out.Note = fmt.Sprintf("remote saved, but the first sync failed: %v", err)
-		}
+		return nil, out, nil
+	}
+
+	out.Note = "remote configured; the server will pull (remote-wins on conflict) and push on its sync interval"
+
+	// Try an immediate sync so a bad URL surfaces now rather than later. The
+	// change itself is committed, so the lock is released first: the sync
+	// takes it back for the phases that touch the tree, and talks to the
+	// network without it, exactly as the periodic sync does.
+	unlock()
+	unlock = nil
+	if err := s.git.Sync(ctx, &s.Core.write); err != nil {
+		out.Note = fmt.Sprintf("remote saved, but the first sync failed: %v", err)
 	}
 	return nil, out, nil
 }

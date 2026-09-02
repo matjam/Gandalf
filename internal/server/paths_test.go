@@ -15,6 +15,14 @@ func TestPathsAreRejectedWithGuidance(t *testing.T) {
 	var session SessionStartOutput
 	h.call("session_start", SessionStartInput{Title: "Real Work", Tags: []string{"work"}}, &session)
 
+	// Where today's session note lands depends on today's date, so the path
+	// is asked for rather than spelled out: a month written into the test
+	// would fail on the first of the next.
+	_, sessionPath, err := h.server.resolve(session.Ref)
+	if err != nil {
+		t.Fatalf("resolve %s: %v", session.Ref, err)
+	}
+
 	tests := []struct {
 		name    string
 		ref     string
@@ -37,7 +45,7 @@ func TestPathsAreRejectedWithGuidance(t *testing.T) {
 		},
 		{
 			name:    "session by path",
-			ref:     "Sessions/2026/08/" + strings.TrimPrefix(session.Ref, "session:") + ".md",
+			ref:     sessionPath,
 			wantRef: session.Ref,
 		},
 		{

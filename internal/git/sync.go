@@ -2,11 +2,35 @@ package git
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"os"
+	"log/slog"
 	"strings"
+	"sync"
 	"time"
 )
+
+// networkTimeout bounds each git command that talks to the remote.
+//
+// A fetch or a push can stall for as long as the far end likes: a link that
+// drops packets rather than refusing them, an SSH agent waiting for someone
+// to approve a key, a proxy that accepts and then says nothing. Git itself
+// waits indefinitely. Two minutes is long enough to push a vault's history to
+// a slow host and short enough that a sync loop wedged on one call is back
+// before its next interval.
+//
+// A variable so tests can stall a remote without waiting two minutes on it.
+var networkTimeout = 2 * time.Minute
+
+// Unguarded is the guard to pass to Sync when nothing else can be changing
+// the working tree, or when the caller already holds the lock that protects
+// it and would deadlock taking it again.
+var Unguarded sync.Locker = nopLocker{}
+
+type nopLocker struct{}
+
+func (nopLocker) Lock()   {}
+func (nopLocker) Unlock() {}
 
 // SetRemote records a remote URL in config and in the repository, creating the
 // remote if needed. An empty URL clears the configured remote URL but leaves
@@ -82,9 +106,23 @@ func (r *Repo) setRemoteLocked(name, url string) error {
 	return err
 }
 
-// Sync pulls from the remote with remote-wins conflict resolution, then pushes
-// local commits. No remote configured is a no-op.
-func (r *Repo) Sync() error {
+// Sync brings the vault and its remote into line: it commits anything still
+// dirty, fetches, merges the remote's branch with remote-wins conflict
+// resolution, and pushes. No remote configured is a no-op.
+//
+// The phases that change the working tree or the index — the checkpoint
+// commit and the merge — run under guard and under the repository mutex. The
+// phases that talk to the network — fetch and push — run under neither, and
+// are bounded by networkTimeout.
+//
+// That split is the point. Every note write commits through the same mutex,
+// and a sync that held it across the network held every writing tool behind
+// a stalled push: an append to a session note waited minutes, unbounded, for
+// a remote that had nothing to do with the note. The guard is the server's
+// write lock, so that a checkpoint cannot sweep a half-written note into a
+// commit under the wrong subject, and a merge cannot rewrite a note a tool is
+// in the middle of changing.
+func (r *Repo) Sync(ctx context.Context, guard sync.Locker) error {
 	if r == nil || r.disabled || !r.IsRepo() {
 		return nil
 	}
@@ -96,53 +134,70 @@ func (r *Repo) Sync() error {
 	if !cfg.IsEnabled() || cfg.URL == "" {
 		return nil
 	}
-
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	return r.syncLocked(cfg)
-}
-
-// syncLocked assumes r.mu is held.
-func (r *Repo) syncLocked(cfg Config) error {
 	remote := cfg.RemoteName()
 
-	if err := r.setRemoteLocked(remote, cfg.URL); err != nil {
-		return fmt.Errorf("set remote: %w", err)
-	}
-
-	// Commit anything still dirty so pull does not refuse a dirty tree.
-	if err := r.commitLocked("gandalf: sync checkpoint", ""); err != nil {
+	if err := r.checkpoint(guard, remote, cfg.URL); err != nil {
 		return err
 	}
 
-	if _, err := r.run("fetch", remote); err != nil {
+	if _, err := r.runNetwork(ctx, "fetch", remote); err != nil {
 		return fmt.Errorf("git fetch: %w", err)
 	}
 
-	branch, err := r.currentBranch()
+	branch, upstream, err := r.merge(guard, remote)
 	if err != nil {
 		return err
 	}
 
-	remoteRef := remote + "/" + branch
-	if !r.refExists(remoteRef) {
-		// First push: no upstream yet. Push and set upstream.
-		if _, err := r.run("push", "-u", remote, branch); err != nil {
-			return fmt.Errorf("git push: %w", err)
-		}
-		return nil
+	args := []string{"push", remote, branch}
+	if !upstream {
+		// First push: the remote has no such branch yet, so nothing was
+		// merged, and the push sets the upstream.
+		args = []string{"push", "-u", remote, branch}
 	}
-
-	// remote-wins: on conflict, prefer the remote's version of the file.
-	if _, err := r.run("merge", "-X", "theirs", "--no-edit", remoteRef); err != nil {
-		return fmt.Errorf("git merge (remote-wins): %w", err)
-	}
-
-	if _, err := r.run("push", remote, branch); err != nil {
+	if _, err := r.runNetwork(ctx, args...); err != nil {
 		return fmt.Errorf("git push: %w", err)
 	}
 	return nil
+}
+
+// checkpoint makes the remote what the config says and commits anything
+// still dirty, so the merge that follows does not refuse a dirty tree.
+func (r *Repo) checkpoint(guard sync.Locker, remote, url string) error {
+	guard.Lock()
+	defer guard.Unlock()
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if err := r.setRemoteLocked(remote, url); err != nil {
+		return fmt.Errorf("set remote: %w", err)
+	}
+	return r.commitLocked("gandalf: sync checkpoint", "")
+}
+
+// merge folds the fetched remote branch into the working tree, preferring the
+// remote's version of any conflicting file. It reports the branch and whether
+// the remote already had it: a remote without the branch has nothing to merge.
+func (r *Repo) merge(guard sync.Locker, remote string) (branch string, upstream bool, err error) {
+	guard.Lock()
+	defer guard.Unlock()
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	branch, err = r.currentBranch()
+	if err != nil {
+		return "", false, err
+	}
+
+	remoteRef := remote + "/" + branch
+	if !r.refExists(remoteRef) {
+		return branch, false, nil
+	}
+
+	if _, err := r.run("merge", "-X", "theirs", "--no-edit", remoteRef); err != nil {
+		return "", false, fmt.Errorf("git merge (remote-wins): %w", err)
+	}
+	return branch, true, nil
 }
 
 // currentBranch returns the checked-out branch name.
@@ -163,9 +218,9 @@ func (r *Repo) refExists(ref string) bool {
 	return err == nil
 }
 
-// StartSync runs Sync on an interval until ctx is cancelled. Failures are
-// written to stderr; they never stop the loop.
-func (r *Repo) StartSync(ctx context.Context) {
+// StartSync runs Sync on an interval until ctx is cancelled, passing guard
+// through to each run. Failures are logged; they never stop the loop.
+func (r *Repo) StartSync(ctx context.Context, guard sync.Locker) {
 	if r == nil || r.disabled {
 		return
 	}
@@ -184,8 +239,10 @@ func (r *Repo) StartSync(ctx context.Context) {
 			case <-time.After(interval):
 			}
 
-			if err := r.Sync(); err != nil {
-				fmt.Fprintf(os.Stderr, "gandalf: git sync: %v\n", err)
+			// Cancellation is shutdown, not failure: a fetch cut short
+			// because the server is stopping is not worth an error line.
+			if err := r.Sync(ctx, guard); err != nil && !errors.Is(err, context.Canceled) {
+				slog.ErrorContext(ctx, "gandalf: git sync", "error", err)
 			}
 		}
 	}()

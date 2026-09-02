@@ -71,9 +71,7 @@ func serve(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	if repo != nil {
-		repo.StartSync(ctx)
-	}
+	srv.StartSync(ctx)
 
 	if *addr != "" {
 		return srv.RunHTTP(ctx, server.HTTPConfig{Addr: *addr, Token: token})
