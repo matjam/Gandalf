@@ -153,6 +153,13 @@ func Topics() []Doc {
 	return out
 }
 
+// Contract returns the operating contract: the document every other topic
+// points back at, and the one a correction lands in by default.
+func Contract() Doc {
+	doc, _ := Lookup("operating")
+	return doc
+}
+
 // Core returns the documents returned in full at session start.
 func Core() []Doc {
 	var out []Doc

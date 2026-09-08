@@ -75,6 +75,17 @@ func (s *Server) noteDelete(ctx context.Context, _ *sdk.CallToolRequest, in Note
 		return nil, NoteDeleteOutput{}, err
 	}
 
+	// A vault-declared topic is named in the registry as well as on disk.
+	// Leaving the entry behind would have boot advertise a topic that reads
+	// as missing.
+	if t, ok := s.vault.Topics().ByPath(path); ok {
+		set := s.vault.Topics()
+		set.Remove(t.ID)
+		if err := s.vault.SetTopics(set); err != nil {
+			return nil, NoteDeleteOutput{}, err
+		}
+	}
+
 	s.record("gandalf: note delete "+ref.String(), in.Reason)
 	return nil, NoteDeleteOutput{
 		Ref:     ref.String(),
