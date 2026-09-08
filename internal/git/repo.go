@@ -173,6 +173,9 @@ func (r *Repo) execute(ctx context.Context, env []string, args ...string) ([]byt
 		cmd.Env = append(os.Environ(), env...)
 	}
 
+	// What it takes to stop git at the deadline differs by platform; see kill.
+	cmd.Cancel = func() error { return kill(cmd) }
+
 	// Killing git does not kill the ssh it may have spawned, and an orphan
 	// still holding the output pipes would keep Wait blocked past the
 	// deadline it was meant to enforce.
