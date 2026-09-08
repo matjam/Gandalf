@@ -128,13 +128,7 @@ func (s *Server) boot(ctx context.Context, _ *sdk.CallToolRequest, _ BootInput) 
 		})
 	}
 
-	for _, doc := range instructions.Topics() {
-		out.Topics = append(out.Topics, TopicSummary{
-			Ref:   s.canonical(doc.Path).String(),
-			Title: doc.Title,
-			When:  doc.When,
-		})
-	}
+	out.Topics = s.topicSummaries()
 
 	open, err := s.openSessions(schema.Today())
 	if err != nil {
@@ -181,12 +175,13 @@ func (s *Server) addressing() map[string]Addressing {
 		}
 	}
 
-	// Topics are Gandalf's own documents rather than a category the vault
-	// declares, so nothing above accounts for them, and a model that cannot
+	// Topics are declared individually rather than by a category's filing
+	// rule, so nothing above accounts for them, and a model that cannot
 	// address them cannot read the operating topics boot just listed.
 	out[KindTopic] = Addressing{
-		RefForm:    KindTopic + ":<name>",
-		Holds:      "operating topics Gandalf ships; the vault's copy is what is served",
+		RefForm: KindTopic + ":<name>",
+		Holds: "operating topics: the ones Gandalf ships and the ones this vault adds " +
+			"with topic_new; the vault's copy is what is served",
 		Mutability: string(category.Replaceable),
 	}
 

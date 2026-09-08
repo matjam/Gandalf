@@ -103,6 +103,18 @@ category to avoid deciding where a note belongs. Retiring a category stops new n
 filed there while leaving the existing ones fully usable, which is the answer whenever
 notes exist.
 
+## Topics
+
+An operating topic is standing guidance for a kind of work — shipping, diagnostics, a
+house style — read on demand when the work touches its subject. Gandalf ships some;
+`topic_new` declares another, filed beside them and listed at boot with the rest. Give it
+a one-line `when` saying which work should send the model there; that line is what the
+boot table shows.
+
+Declaring one changes what every session is offered: ask first. A rule that belongs to
+one project goes in that project's notes; a rule for writing one language goes in its
+standard. A topic is for guidance that applies across both.
+
 ## Metadata
 
 Every note carries a type, created and updated dates, tags, related links, an author, and

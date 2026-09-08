@@ -11,7 +11,6 @@ import (
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/matjam/gandalf/internal/category"
-	"github.com/matjam/gandalf/internal/instructions"
 	"github.com/matjam/gandalf/internal/vault"
 )
 
@@ -88,13 +87,7 @@ func (s *Server) list(ctx context.Context, _ *sdk.CallToolRequest, in ListInput)
 
 	switch kind {
 	case "topics":
-		for _, doc := range instructions.Topics() {
-			out.Topics = append(out.Topics, TopicSummary{
-				Ref:   s.canonical(doc.Path).String(),
-				Title: doc.Title,
-				When:  doc.When,
-			})
-		}
+		out.Topics = s.topicSummaries()
 		out.Total = len(out.Topics)
 		return nil, out, nil
 

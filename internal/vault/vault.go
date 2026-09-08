@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/matjam/gandalf/internal/category"
+	"github.com/matjam/gandalf/internal/topic"
 )
 
 // ErrOutsideVault is returned for a path that would escape the vault root.
@@ -21,6 +22,7 @@ var ErrOutsideVault = errors.New("path is outside the vault")
 type Vault struct {
 	root       string
 	categories *category.Set
+	topics     *topic.Set
 	depth      category.Depth
 }
 
@@ -49,7 +51,25 @@ func Open(dir string) (*Vault, error) {
 		return nil, err
 	}
 
-	return &Vault{root: abs, categories: categories, depth: category.DepthMonth}, nil
+	topics, err := topic.Load(abs)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Vault{root: abs, categories: categories, topics: topics, depth: category.DepthMonth}, nil
+}
+
+// Topics returns the operating topics this vault declares for itself, beyond
+// the ones Gandalf ships.
+func (v *Vault) Topics() *topic.Set { return v.topics }
+
+// SetTopics replaces the vault's declared topics and writes them back.
+func (v *Vault) SetTopics(set *topic.Set) error {
+	if err := topic.Save(v.root, set); err != nil {
+		return err
+	}
+	v.topics = set
+	return nil
 }
 
 // Categories returns the categories this vault declares.

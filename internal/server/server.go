@@ -302,6 +302,15 @@ func (s *Server) MCP() *sdk.Server {
 	}, s.noteUpdate)
 
 	sdk.AddTool(srv, &sdk.Tool{
+		Name: "topic_new",
+		Description: "Declare a new operating topic: a document read on demand, listed in " +
+			"boot's topic table beside shipping and diagnostics, and addressed as " +
+			"topic:<id>. For standing guidance that applies to a kind of work rather " +
+			"than to a project — a style guide, a review procedure. Ask first: it " +
+			"changes what every session is offered.",
+	}, s.topicNew)
+
+	sdk.AddTool(srv, &sdk.Tool{
 		Name: "category_list",
 		Description: "List the kinds of note this vault holds, how each is filed, and how " +
 			"its notes are addressed. Check here before creating a note of an unfamiliar kind.",
@@ -399,27 +408,27 @@ func (s *Server) Run(ctx context.Context) error {
 
 // resolve turns a ref string into a ref and the note path it addresses.
 //
-// Topics are resolved here rather than in the vault package: their paths come
-// from the shipped manifest, which the vault deliberately knows nothing about.
+// Topics are resolved here rather than in the vault package: a shipped topic's
+// path comes from the manifest compiled into the binary, and a vault-declared
+// one from the registry the vault keeps, neither of which is a filing rule.
 func (s *Server) resolve(raw string) (vault.Ref, string, error) {
-	// Topics are addressed by a reserved kind rather than a category: they are
-	// documents Gandalf ships, and their homes come from its manifest rather
-	// than from the vault's filing rules.
+	// Topics are addressed by a reserved kind rather than a category, because
+	// their homes are declared individually rather than derived from a rule.
 	if id, ok := strings.CutPrefix(strings.TrimSpace(raw), KindTopic+":"); ok {
-		doc, found := instructions.Lookup(id)
+		entry, found := s.lookupTopic(strings.TrimSpace(id))
 		if !found {
 			return vault.Ref{}, "", fmt.Errorf("ref %q: no such topic", raw)
 		}
-		return s.canonical(doc.Path), doc.Path, nil
+		return s.canonical(entry.Path), entry.Path, nil
 	}
 
 	ref, err := s.vault.ParseRef(raw)
 	if err != nil {
-		// A bare shipped-document id is accepted: the model has just read a
-		// table of them, and refusing "shipping" for want of a prefix would be
-		// pedantry rather than a safeguard.
-		if doc, found := instructions.Lookup(strings.TrimSpace(raw)); found {
-			return s.canonical(doc.Path), doc.Path, nil
+		// A bare topic id is accepted: the model has just read a table of
+		// them, and refusing "shipping" for want of a prefix would be pedantry
+		// rather than a safeguard.
+		if entry, found := s.lookupTopic(strings.TrimSpace(raw)); found {
+			return s.canonical(entry.Path), entry.Path, nil
 		}
 
 		// A path is the one wrong answer worth answering properly: the vault
@@ -483,6 +492,10 @@ func CanonicalRef(v *vault.Vault, notePath string) vault.Ref {
 		if doc.Path == notePath {
 			return vault.Ref{Kind: KindTopic, Name: doc.ID}
 		}
+	}
+
+	if t, ok := v.Topics().ByPath(notePath); ok {
+		return vault.Ref{Kind: KindTopic, Name: t.ID}
 	}
 
 	return v.RefFor(notePath)

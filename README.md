@@ -392,13 +392,19 @@ Standards/   engineering standards, seeded with opinionated defaults
 Projects/    one folder per project: design, decisions, todo
 Sessions/    one note per unit of work, filed by date
 Meetings/    notes from conversations with other people
-.gandalf/    categories, seed ledger, search index
+.gandalf/    categories, topics, seed ledger, search index
 ```
 
 Those folders come from the categories the vault declares in
 `.gandalf/categories.json`. Add your own, rename them, or retire the ones you do
 not use — what kinds of note the vault keeps is your decision, and the tools
 follow the declaration rather than a list baked into the binary.
+
+Operating topics work the same way. Gandalf ships shipping, diagnostics, and
+external-content; `topic_new` declares another — a house style guide, a review
+procedure — records it in `.gandalf/topics.json`, and files it in `Gandalf/`
+beside the shipped ones. From then on it is listed at boot and addressed as
+`topic:<id>` like the rest.
 
 Seeded documents are a starting point. Once a file is in your vault it wins, so
 corrections you make during a session persist across releases.
@@ -408,6 +414,7 @@ corrections you make during a session persist across releases.
 ```
 cmd/gandalf/            command line entry point
 internal/category/      what kinds of note exist and how each is filed
+internal/topic/         the operating topics a vault declares for itself
 internal/schema/        the frontmatter contract and its validation
 internal/vault/         note parsing, refs, wikilinks, backlinks, linting
 internal/index/         chunking, SQLite storage, hybrid search
