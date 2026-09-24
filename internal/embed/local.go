@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/knights-analytics/hugot"
@@ -129,7 +130,7 @@ func (l *Local) load(ctx context.Context) error {
 		}
 		l.backend = backend
 
-		path, err := hugot.DownloadModel(ctx, LocalModel, dir, hugot.NewDownloadOptions())
+		path, err := modelPath(ctx, dir)
 		if err != nil {
 			_ = session.Destroy()
 			l.err = fmt.Errorf(
@@ -161,6 +162,37 @@ func (l *Local) load(ctx context.Context) error {
 	})
 
 	return l.err
+}
+
+// localFiles are the files the pipeline reads from the model directory. When
+// all of them are present the model is used as it is.
+var localFiles = []string{localOnnx, "tokenizer.json", "config.json"}
+
+// modelPath returns the directory holding the model, downloading it only when
+// the cache under dir is incomplete.
+//
+// hugot.DownloadModel asks Hugging Face for the repository's file list on
+// every call, even when every file is already on disk, so going through it
+// unconditionally made search depend on the network, and on the health of
+// Hugging Face's own cache, at every start.
+func modelPath(ctx context.Context, dir string) (string, error) {
+	path := filepath.Join(dir, strings.ReplaceAll(LocalModel, "/", "_"))
+	if complete(path) {
+		return path, nil
+	}
+	return hugot.DownloadModel(ctx, LocalModel, dir, hugot.NewDownloadOptions())
+}
+
+// complete reports whether every file the pipeline needs is present and
+// non-empty in path.
+func complete(path string) bool {
+	for _, name := range localFiles {
+		info, err := os.Stat(filepath.Join(path, name))
+		if err != nil || info.Size() == 0 {
+			return false
+		}
+	}
+	return true
 }
 
 // cacheDir returns where the model is stored, creating it if needed.

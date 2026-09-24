@@ -428,6 +428,43 @@ func TestLocalCacheDir(t *testing.T) {
 	})
 }
 
+// TestLocalUsesACompleteCache covers starting without the network: a model
+// already on disk must be used as it is, without asking Hugging Face anything.
+func TestLocalUsesACompleteCache(t *testing.T) {
+	dir := t.TempDir()
+	model := filepath.Join(dir, strings.ReplaceAll(LocalModel, "/", "_"))
+	if err := os.MkdirAll(model, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range localFiles {
+		if err := os.WriteFile(filepath.Join(model, name), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// A cancelled context makes any attempt at the network fail, so success
+	// means none was made.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	got, err := modelPath(ctx, dir)
+	if err != nil {
+		t.Fatalf("modelPath: %v", err)
+	}
+	if got != model {
+		t.Errorf("modelPath = %q, want %q", got, model)
+	}
+
+	t.Run("an empty file is not a complete cache", func(t *testing.T) {
+		if err := os.WriteFile(filepath.Join(model, localOnnx), nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if complete(model) {
+			t.Error("complete = true with an empty model file")
+		}
+	})
+}
+
 // TestEmbeddersDescribeThemselves covers the accessors the index relies on to
 // decide whether a stored vector is comparable with a fresh one.
 func TestEmbeddersDescribeThemselves(t *testing.T) {
