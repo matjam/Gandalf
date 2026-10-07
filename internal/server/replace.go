@@ -185,8 +185,9 @@ func replaceTarget(in NoteReplaceInput) (target, error) {
 //
 // The vault's own declaration is asked first, so a user who has changed what a
 // category means gets their answer rather than Gandalf's. A document Gandalf
-// ships is next: those are operating instructions describing current state,
-// and the correction protocol depends on them being editable. Anything else —
+// ships is next, then a topic the vault declared: both are operating
+// instructions describing current state, and the correction protocol depends
+// on them being editable. Anything else —
 // a note no category accounts for — is append-only, because losing a record
 // is worse than having to append to one.
 func (s *Server) mutability(notePath string) category.Mutability {
@@ -200,6 +201,12 @@ func (s *Server) mutability(notePath string) category.Mutability {
 
 	if _, ok := shippedAt(notePath); ok {
 		return category.Replaceable
+	}
+
+	for _, t := range s.vault.Topics().Topics {
+		if t.Path == notePath {
+			return category.Replaceable
+		}
 	}
 
 	return category.AppendOnly

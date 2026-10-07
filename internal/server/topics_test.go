@@ -224,3 +224,26 @@ func TestTopicFile(t *testing.T) {
 		}
 	}
 }
+
+// A declared topic describes current guidance, as a shipped one does, so it is
+// rewritten in place rather than refused as a chronological record.
+func TestTopicNewIsReplaceable(t *testing.T) {
+	h := newHarness(t)
+	declareStyle(t, h)
+
+	h.call("note_read", NoteReadInput{Ref: "topic:style"}, nil)
+
+	var out NoteReplaceOutput
+	h.call("note_replace", NoteReplaceInput{
+		Ref:     "topic:style",
+		Section: "Sentences",
+		Content: "Shorter declaratives.",
+	}, &out)
+
+	if out.Forced {
+		t.Error("replacing a declared topic needed force")
+	}
+	if !strings.Contains(out.Removed, "Short declaratives.") {
+		t.Errorf("removed = %q", out.Removed)
+	}
+}
