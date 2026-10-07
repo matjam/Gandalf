@@ -143,7 +143,7 @@ func (s *Server) noteReplace(ctx context.Context, _ *sdk.CallToolRequest, in Not
 	s.record(message, in.Reason)
 
 	return nil, NoteReplaceOutput{
-		NoteOutput: s.describe(ref, note),
+		NoteOutput: s.ack(ref, note),
 		Removed:    s.toRefs(removed),
 		Forced:     forced,
 	}, nil

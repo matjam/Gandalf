@@ -14,8 +14,9 @@ change.
 
 Before substantive work:
 
-1. Call `boot`. It returns this protocol, the operating contract, the topics available on
-   demand, how notes are addressed in this vault, and any session note still open today.
+1. Call `boot`. It returns the operating contract, the topics available on demand
+   (this protocol among them), how notes are addressed in this vault, and any session
+   note still open today.
 2. If a session note is already open and this is the same unit of work, continue it
    rather than starting another.
 3. Look for prior work on the same topic before re-deciding anything. Searching finds

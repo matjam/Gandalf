@@ -223,12 +223,20 @@ func TestNoteAppend(t *testing.T) {
 		Kind: "project", Facet: "decisions", Title: "Gandalf", Scope: "gandalf", Tags: []string{"decisions"},
 	}, &created)
 
-	var out NoteOutput
+	var ack NoteOutput
 	h.call("note_append", NoteAppendInput{
 		Ref:     created.Ref,
 		Heading: "2026-08-17 — Refs, not paths",
 		Content: "Tools address notes by what they are.",
-	}, &out)
+	}, &ack)
+
+	// A write acknowledges rather than echoing a note that grows on every append.
+	if ack.Ref != created.Ref || ack.Content != "" {
+		t.Errorf("append returned ref %q with %d bytes of content, want %q and none", ack.Ref, len(ack.Content), created.Ref)
+	}
+
+	var out NoteOutput
+	h.call("note_read", NoteReadInput{Ref: created.Ref}, &out)
 
 	if !strings.Contains(out.Content, "## 2026-08-17 — Refs, not paths") {
 		t.Errorf("heading was not added:\n%s", out.Content)
@@ -241,7 +249,8 @@ func TestNoteAppend(t *testing.T) {
 	}
 
 	// A second append keeps the first.
-	h.call("note_append", NoteAppendInput{Ref: created.Ref, Content: "A later decision."}, &out)
+	h.call("note_append", NoteAppendInput{Ref: created.Ref, Content: "A later decision."}, nil)
+	h.call("note_read", NoteReadInput{Ref: created.Ref}, &out)
 	if !strings.Contains(out.Content, "Tools address notes by what they are.") {
 		t.Error("the second append overwrote the first")
 	}
@@ -294,7 +303,9 @@ func TestNoteUpdate(t *testing.T) {
 	}
 
 	// The body is metadata's business only.
-	if !strings.Contains(out.Content, "# Language Rust") {
+	var note NoteOutput
+	h.call("note_read", NoteReadInput{Ref: created.Ref}, &note)
+	if !strings.Contains(note.Content, "# Language Rust") {
 		t.Error("update touched the body")
 	}
 }

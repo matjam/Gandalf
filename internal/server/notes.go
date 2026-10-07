@@ -32,7 +32,7 @@ type NoteOutput struct {
 	Tags    []string `json:"tags"`
 	Related []string `json:"related"`
 	Status  string   `json:"status,omitempty"`
-	Content string   `json:"content"`
+	Content string   `json:"content,omitempty"`
 
 	// Source is set to "shipped" when the text came from the binary because
 	// the vault has no copy, and is otherwise omitted.
@@ -226,7 +226,10 @@ func (s *Server) noteNew(ctx context.Context, _ *sdk.CallToolRequest, in NoteNew
 
 	ref := s.canonical(note.Path)
 	s.record("gandalf: note new "+ref.String(), in.Reason)
-	return nil, s.describe(ref, note), nil
+
+	// The caller wrote the whole body, so it has seen the note's text.
+	s.markRead(ref)
+	return nil, s.ack(ref, note), nil
 }
 
 // NoteAppendInput describes content to add to a note.
@@ -272,7 +275,7 @@ func (s *Server) noteAppend(ctx context.Context, _ *sdk.CallToolRequest, in Note
 	}
 
 	s.record("gandalf: note append "+ref.String(), in.Reason)
-	return nil, s.describe(ref, note), nil
+	return nil, s.ack(ref, note), nil
 }
 
 // or has stopped linking to.
@@ -355,7 +358,7 @@ func (s *Server) noteUpdate(ctx context.Context, _ *sdk.CallToolRequest, in Note
 	}
 
 	s.record("gandalf: note update "+ref.String(), in.Reason)
-	return nil, s.describe(ref, note), nil
+	return nil, s.ack(ref, note), nil
 }
 
 // describe renders a note for a tool result, translating the links stored on
@@ -378,6 +381,24 @@ func (s *Server) describe(ref vault.Ref, n *vault.Note) NoteOutput {
 		Related: s.refsFor(n.FM.Related),
 		Status:  string(n.FM.Status),
 		Content: s.toRefs(n.Body),
+	}
+}
+
+// ack reports a write without echoing the note's text.
+//
+// The caller already holds what it wrote, and the whole note grows with every
+// append, so echoing it spends context on every write. It does not mark the
+// note as read: the caller has seen its own change, not the text around it.
+func (s *Server) ack(ref vault.Ref, n *vault.Note) NoteOutput {
+	return NoteOutput{
+		Ref:     ref.String(),
+		Title:   n.Title(),
+		Type:    string(n.FM.Type),
+		Created: n.FM.Created.String(),
+		Updated: n.FM.Updated.String(),
+		Tags:    n.FM.Tags,
+		Related: s.refsFor(n.FM.Related),
+		Status:  string(n.FM.Status),
 	}
 }
 

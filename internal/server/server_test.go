@@ -250,6 +250,20 @@ func TestBoot(t *testing.T) {
 		if !strings.HasPrefix(strings.TrimSpace(doc.Content), "# ") {
 			t.Errorf("%s content does not start with a heading", doc.ID)
 		}
+		if strings.Contains(doc.Content, "## Backlinks") {
+			t.Errorf("%s carries its backlinks block into boot", doc.ID)
+		}
+		if doc.ID == "memory" {
+			t.Error("the memory protocol is returned in full rather than listed as a topic")
+		}
+	}
+
+	listed := false
+	for _, topic := range out.Topics {
+		listed = listed || topic.Ref == "topic:memory"
+	}
+	if !listed {
+		t.Error("topic:memory is missing from the topic table")
 	}
 
 	// Every advertised topic must be fetchable by the ref boot handed out.

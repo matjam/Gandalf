@@ -22,6 +22,15 @@ func design(h *harness, content string) string {
 	return out.Ref
 }
 
+// bodyOf reads a note's content back, since writes acknowledge without it.
+func bodyOf(h *harness, ref string) string {
+	h.t.Helper()
+
+	var out NoteOutput
+	h.call("note_read", NoteReadInput{Ref: ref}, &out)
+	return out.Content
+}
+
 const designBody = `## Shape
 
 Old shape.
@@ -48,12 +57,17 @@ func TestNoteReplaceSection(t *testing.T) {
 	if strings.TrimSpace(out.Removed) != "Old verification." {
 		t.Errorf("removed = %q, want %q", out.Removed, "Old verification.")
 	}
-	if !strings.Contains(out.Content, "## Verification\n\nNew verification.") {
-		t.Errorf("content:\n%s", out.Content)
+	if out.Content != "" {
+		t.Errorf("replace echoed %d bytes of content, want an acknowledgement", len(out.Content))
+	}
+
+	body := bodyOf(h, ref)
+	if !strings.Contains(body, "## Verification\n\nNew verification.") {
+		t.Errorf("content:\n%s", body)
 	}
 	for _, keep := range []string{"Old shape.", "Still open."} {
-		if !strings.Contains(out.Content, keep) {
-			t.Errorf("replacement disturbed %q:\n%s", keep, out.Content)
+		if !strings.Contains(body, keep) {
+			t.Errorf("replacement disturbed %q:\n%s", keep, body)
 		}
 	}
 }
@@ -73,8 +87,8 @@ func TestNoteReplaceAnchored(t *testing.T) {
 	if !strings.Contains(out.Removed, "Old shape.") {
 		t.Errorf("removed = %q", out.Removed)
 	}
-	if !strings.Contains(out.Content, "## Shape\n\nBounded.\n\n## Verification") {
-		t.Errorf("content:\n%s", out.Content)
+	if body := bodyOf(h, ref); !strings.Contains(body, "## Shape\n\nBounded.\n\n## Verification") {
+		t.Errorf("content:\n%s", body)
 	}
 }
 
@@ -88,8 +102,8 @@ func TestNoteReplaceWholeBody(t *testing.T) {
 	if !strings.Contains(out.Removed, "Old shape.") {
 		t.Errorf("removed = %q", out.Removed)
 	}
-	if strings.Contains(out.Content, "Old shape.") {
-		t.Errorf("content still holds the old body:\n%s", out.Content)
+	if body := bodyOf(h, ref); strings.Contains(body, "Old shape.") {
+		t.Errorf("content still holds the old body:\n%s", body)
 	}
 }
 
@@ -161,8 +175,9 @@ func TestNoteReplaceRequiresRead(t *testing.T) {
 		Content: "Run gofmt.",
 	}, &out)
 
-	if !strings.Contains(out.Content, "## Tooling\n\nRun gofmt.") {
-		t.Errorf("content:\n%s", out.Content)
+	h.call("note_read", NoteReadInput{Ref: "standard:language-go"}, &note)
+	if !strings.Contains(note.Content, "## Tooling\n\nRun gofmt.") {
+		t.Errorf("content:\n%s", note.Content)
 	}
 	if !strings.Contains(out.Removed, "goimports") {
 		t.Errorf("removed = %q, want the shipped tooling section", out.Removed)
@@ -276,6 +291,7 @@ func TestReplaceForcesAnAppendOnlyNote(t *testing.T) {
 	var session SessionStartOutput
 	h.call("session_start", SessionStartInput{Title: "Untitled Work"}, &session)
 	h.call("note_append", NoteAppendInput{Ref: session.Ref, Content: "What happened."}, nil)
+	h.call("note_read", NoteReadInput{Ref: session.Ref}, nil)
 
 	// Without force it stays refused, and the refusal has to say how to
 	// proceed rather than merely saying no.
