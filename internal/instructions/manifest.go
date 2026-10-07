@@ -37,12 +37,12 @@ var docs = []Doc{
 		Path:     "Gandalf/Memory.md",
 		Title:    "Memory Protocol",
 		Type:     typeStandard,
-		Delivery: AtBoot,
+		Delivery: Listed,
 		Tags:     []string{"gandalf", "memory", "workflow"},
 		Related: []string{
 			"Gandalf/Operating",
 		},
-		When: "Always. Governs session notes, project notes, and note metadata.",
+		When: "Writing notes: sessions, project design, decisions, and todo; declaring categories or topics.",
 	},
 	{
 		ID:       "shipping",

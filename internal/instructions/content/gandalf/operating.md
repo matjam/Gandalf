@@ -13,6 +13,7 @@ Read the matching topic before proposing or changing work.
 
 | When the work involves | Read |
 |---|---|
+| Writing notes, project notes, categories, topics | `topic:memory` |
 | Git, commits, tests, PRs, CI, releases | `topic:shipping` |
 | Bugs, failures, incidents, latency, unexpected behaviour | `topic:diagnostics` |
 | Issue trackers, wikis, or other shared documents | `topic:external-content` |
@@ -21,6 +22,18 @@ Read the matching topic before proposing or changing work.
 
 `boot` returns the full list with the ref for each. Read one with
 `note_read`.
+
+## Session Notes
+
+- Read-only work creates no notes.
+- Before proposing or writing code, search for prior work, then open a session note
+  with `session_start`. Continue a note `boot` reports open today when it covers the
+  same unit of work.
+- Write to the session note as the work happens: goal, decisions and why, rejected
+  alternatives, and what was verified where.
+- Sessions and decision logs are append-only. Design notes, backlogs, and standards
+  describe current state, so rewrite the stale part.
+- Read `topic:memory` before writing project notes or declaring a category or topic.
 
 ## Working Agreement
 

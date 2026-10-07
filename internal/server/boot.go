@@ -195,7 +195,9 @@ func (s *Server) document(doc instructions.Doc) (content, source string, err err
 		if err != nil {
 			return "", "", fmt.Errorf("read %q: %w", doc.Path, err)
 		}
-		return note.Body, "vault", nil
+		// The backlinks block helps someone navigating the vault and tells a
+		// session starting work nothing, so boot leaves it out.
+		return note.Content(), "vault", nil
 	}
 
 	body, err := doc.Body()

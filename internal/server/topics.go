@@ -178,7 +178,7 @@ func (s *Server) topicNew(ctx context.Context, _ *sdk.CallToolRequest, in TopicN
 
 	return nil, TopicNewOutput{
 		Topic: TopicSummary{Ref: ref.String(), Title: entry.Title, When: entry.When},
-		Note:  s.describe(ref, note),
+		Note:  s.ack(ref, note),
 	}, nil
 }
 
