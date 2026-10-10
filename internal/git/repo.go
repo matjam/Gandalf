@@ -25,6 +25,9 @@ type Repo struct {
 
 	// hs is what is known about whether the repository works. See Health.
 	hs healthState
+
+	// author attributes the commit in progress; see CommitAs. Guarded by mu.
+	author *Author
 }
 
 // Open returns a Repo for a vault root. It does not create the repository;

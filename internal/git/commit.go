@@ -28,6 +28,18 @@ const maxReason = 500
 // for the sync loop. The first commit after a repair also sweeps in everything
 // written while the repository was broken, and says so.
 func (r *Repo) Commit(message, reason string) error {
+	return r.CommitAs(message, reason, nil)
+}
+
+// CommitAs is Commit with the change attributed to author. A nil author is
+// exactly Commit: the repository's own identity.
+//
+// It takes the same path as Commit in every respect (the pre-commit probe, the
+// recovery sweep, the health record), because Commit is CommitAs with no
+// author. The author is held in a field for the duration of the call, under
+// the same mutex that serialises every commit, so it cannot leak into another
+// caller's commit.
+func (r *Repo) CommitAs(message, reason string, author *Author) error {
 	if r == nil || r.disabled {
 		return nil
 	}
@@ -56,6 +68,9 @@ func (r *Repo) Commit(message, reason string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	r.author = author
+	defer func() { r.author = nil }()
+
 	return r.commitTrackedLocked(message, reason)
 }
 
@@ -77,6 +92,9 @@ func (r *Repo) commitTrackedLocked(message, reason string) error {
 			return brokenError(err)
 		}
 		message, reason = recoveryCommit(health, message, reason)
+		// The sweep records everything written while git was broken, by
+		// anyone, so it is the repository's commit and not this caller's.
+		r.author = nil
 	} else if err := r.probe(); err != nil {
 		r.markBroken(err)
 		return brokenError(err)
@@ -110,7 +128,8 @@ func (r *Repo) commitLocked(message, reason string) error {
 		msg = "gandalf: update vault"
 	}
 
-	args := []string{"commit", "-m", msg}
+	args := append([]string{"commit"}, r.authorArgs()...)
+	args = append(args, "-m", msg)
 	if reason := OneLine(reason); reason != "" {
 		// A second -m becomes the body, separated from the subject by a blank
 		// line, which is what makes the subject stay short and readable while
