@@ -83,7 +83,9 @@ embedding flags:
   update  adopt this build's text for documents you have not edited,
           leaving edited and diverged ones alone
   doctor  report how the vault's copy of each shipped document compares
-          with this build, without changing anything
+          with this build, and whether its git repository is healthy
+          (failing, with the damage named, when it is not), without
+          changing anything
   lint    validate note metadata and links; with no NOTE arguments,
           every note in the vault is checked
 `)

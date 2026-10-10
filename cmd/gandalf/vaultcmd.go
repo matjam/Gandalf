@@ -155,6 +155,51 @@ func doctor(args []string) error {
 	}
 
 	// Divergence is the point of the design, so it is reported and never
-	// treated as failure.
+	// treated as failure. A broken repository is the opposite: nothing is
+	// being committed or synced, and a doctor that exits cleanly over that is
+	// a doctor nobody runs in a script.
+	report, broken := gitReport(v.Root())
+	fmt.Println()
+	for _, line := range report {
+		fmt.Println(line)
+	}
+	if broken {
+		return git.ErrBroken
+	}
 	return nil
+}
+
+// gitReport describes the health of the vault's repository, one line to a
+// sentence, and says whether it is broken.
+//
+// It looks at the repository from scratch rather than asking a running server,
+// since doctor is a separate process, and uses the same check the server's sync
+// tick does: HEAD's commit and tree must read, and no loose object may be empty.
+// The empty ones are named, because deleting them is the usual repair and a
+// repair needs names.
+func gitReport(root string) (lines []string, broken bool) {
+	repo := git.Open(root)
+	health := repo.Inspect()
+
+	switch health.State {
+	case git.StateAbsent:
+		return []string{"git: no repository here; `gandalf init` creates one"}, false
+
+	case git.StateDisabled:
+		return []string{"git: disabled for this vault in " + git.ConfigPath}, false
+
+	case git.StateBroken:
+		lines = append(lines,
+			"git: BROKEN: "+health.Err.Error(),
+			"git: changes are not being committed or synced while it is; notes are still written to disk",
+			"git: repair or remove the damaged objects named above; a running server notices without a restart",
+		)
+		return lines, true
+	}
+
+	lines = append(lines, "git: healthy")
+	if cfg, err := git.LoadConfig(root); err == nil && cfg.URL != "" && cfg.IsEnabled() {
+		lines = append(lines, fmt.Sprintf("git: syncing with %s every %s", cfg.URL, cfg.Interval()))
+	}
+	return lines, false
 }

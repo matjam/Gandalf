@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -111,5 +112,81 @@ func TestPrepareKeepsABrokenRepositoryAttached(t *testing.T) {
 	}
 	if health := repo.Health(); health.State != git.StateBroken || health.Err == nil {
 		t.Errorf("health = %+v, want broken with the error that broke it", health)
+	}
+}
+
+// TestDoctorReportsGitHealth: doctor says whether the repository works, names
+// what is wrong with one that does not, and fails so a script notices.
+func TestDoctorReportsGitHealth(t *testing.T) {
+	silence(t)
+
+	tests := []struct {
+		name  string
+		setup func(t *testing.T, root string)
+
+		wantBroken bool
+		want       []string
+	}{
+		{
+			name:  "healthy",
+			setup: func(t *testing.T, root string) {},
+			want:  []string{"git: healthy"},
+		},
+		{
+			name: "no repository",
+			setup: func(t *testing.T, root string) {
+				if err := os.RemoveAll(filepath.Join(root, ".git")); err != nil {
+					t.Fatal(err)
+				}
+			},
+			want: []string{"no repository here"},
+		},
+		{
+			name:       "HEAD's commit is empty",
+			setup:      emptyHeadCommit,
+			wantBroken: true,
+			want:       []string{"git: BROKEN: ", "is empty", "not being committed or synced"},
+		},
+		{
+			name: "an unreachable object is empty",
+			setup: func(t *testing.T, root string) {
+				dir := filepath.Join(root, ".git", "objects", "ab")
+				if err := os.MkdirAll(dir, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(dir, strings.Repeat("c", 38)), nil, 0o444); err != nil {
+					t.Fatal(err)
+				}
+			},
+			wantBroken: true,
+			want:       []string{"git: BROKEN: ", "1 zero-byte loose object(s)", "ab" + strings.Repeat("c", 38)},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := filepath.Join(t.TempDir(), "vault")
+			if _, _, err := prepare(root, true, true); err != nil {
+				t.Fatalf("prepare: %v", err)
+			}
+			tt.setup(t, root)
+
+			lines, broken := gitReport(root)
+			report := strings.Join(lines, "\n")
+
+			if broken != tt.wantBroken {
+				t.Errorf("broken = %v, want %v:\n%s", broken, tt.wantBroken, report)
+			}
+			for _, want := range tt.want {
+				if !strings.Contains(report, want) {
+					t.Errorf("report does not contain %q:\n%s", want, report)
+				}
+			}
+
+			err := run([]string{"doctor", "-vault", root})
+			if tt.wantBroken != errors.Is(err, git.ErrBroken) {
+				t.Errorf("doctor returned %v, want a broken-repository failure = %v", err, tt.wantBroken)
+			}
+		})
 	}
 }
