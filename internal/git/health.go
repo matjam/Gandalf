@@ -321,9 +321,13 @@ func describeEmpty(ids []string) string {
 // walk and a size check per file, so it scales with the number of loose
 // objects; it is run on sync ticks and by doctor, not on every write.
 func (r *Repo) EmptyObjects() ([]string, error) {
-	objects := filepath.Join(r.root, ".git", "objects")
+	return emptyObjectsIn(filepath.Join(r.root, ".git", "objects"), os.ReadDir)
+}
 
-	fanout, err := os.ReadDir(objects)
+// emptyObjectsIn is EmptyObjects over an objects directory, with the directory
+// reader injected so a test can make a fanout directory vanish mid-walk.
+func emptyObjectsIn(objects string, readDir func(string) ([]os.DirEntry, error)) ([]string, error) {
+	fanout, err := readDir(objects)
 	if err != nil {
 		return nil, err
 	}
@@ -336,7 +340,12 @@ func (r *Repo) EmptyObjects() ([]string, error) {
 			continue
 		}
 
-		files, err := os.ReadDir(filepath.Join(objects, dir.Name()))
+		files, err := readDir(filepath.Join(objects, dir.Name()))
+		if errors.Is(err, fs.ErrNotExist) {
+			// Git removes a fanout directory once its objects are packed,
+			// which can happen between listing the objects and reading this.
+			continue
+		}
 		if err != nil {
 			return nil, err
 		}

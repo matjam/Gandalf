@@ -505,6 +505,63 @@ func TestAVaultInsideAnotherRepositoryIsNotMistakenForIt(t *testing.T) {
 	}
 }
 
+// TestACeilingSurvivesASymlinkedVaultPath: git compares the ceiling with the
+// directory it is really in, so a vault reached through a symlink (or a
+// temporary directory that is one, as on macOS) must have its ceiling
+// resolved too, or the broken repository is replaced by its neighbour again.
+func TestACeilingSurvivesASymlinkedVaultPath(t *testing.T) {
+	outer := Open(t.TempDir())
+	if err := outer.Ensure(); err != nil {
+		t.Fatalf("outer Ensure: %v", err)
+	}
+
+	vault := filepath.Join(outer.root, "vault")
+	if err := os.Mkdir(vault, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(vault, link); err != nil {
+		t.Skipf("cannot create symlinks here: %v", err)
+	}
+
+	inner := Open(link)
+	if err := inner.Ensure(); err != nil {
+		t.Fatalf("inner Ensure: %v", err)
+	}
+	writeNote(t, inner, "note.md", "# Note\n")
+	if err := inner.Commit("gandalf: note new note", ""); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(vault, ".git", "HEAD"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := Open(link).Inspect().State; got != StateBroken {
+		t.Errorf("Inspect through a symlink = %s, want broken, not the outer repository's health", got)
+	}
+}
+
+// TestEmptyObjectsToleratesAFanoutDirectoryVanishing: git prunes a fanout
+// directory once its objects are packed, which can happen between listing the
+// objects directory and reading one of its entries.
+func TestEmptyObjectsToleratesAFanoutDirectoryVanishing(t *testing.T) {
+	objects := t.TempDir()
+	if err := os.Mkdir(filepath.Join(objects, "ab"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := emptyObjectsIn(objects, func(dir string) ([]os.DirEntry, error) {
+		if filepath.Base(dir) == "ab" {
+			return nil, &os.PathError{Op: "open", Path: dir, Err: os.ErrNotExist}
+		}
+		return os.ReadDir(dir)
+	})
+	if err != nil || len(got) != 0 {
+		t.Errorf("emptyObjectsIn = %v, %v; want nothing and no error", got, err)
+	}
+}
+
 // TestSyncFailuresFeedHealth: a remote that cannot be reached is recorded,
 // counted, and cleared on the first success, without ever calling the
 // repository itself broken.

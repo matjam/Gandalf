@@ -312,8 +312,8 @@ func (r *Repo) execute(ctx context.Context, env []string, args ...string) ([]byt
 	// and report it healthy. The vault's own parent is the ceiling, so a
 	// broken repository is found broken rather than replaced by its neighbour.
 	cmd.Env = os.Environ()
-	if abs, err := filepath.Abs(r.root); err == nil {
-		cmd.Env = append(cmd.Env, "GIT_CEILING_DIRECTORIES="+filepath.Dir(abs))
+	if ceiling := r.ceiling(); ceiling != "" {
+		cmd.Env = append(cmd.Env, "GIT_CEILING_DIRECTORIES="+ceiling)
 	}
 	cmd.Env = append(cmd.Env, env...)
 
@@ -336,6 +336,24 @@ func (r *Repo) execute(ctx context.Context, env []string, args ...string) ([]byt
 		return nil, err
 	}
 	return out.Bytes(), nil
+}
+
+// ceiling is the directory git must not search above: the vault's parent, or
+// "" when it cannot be worked out.
+//
+// Git compares the ceiling, as text, with the directory it is really in, so a
+// vault reached through a symlink (or through a temporary directory that is
+// one, as on macOS, or a short 8.3 name on Windows) needs the resolved path or
+// the ceiling never matches and protects nothing.
+func (r *Repo) ceiling() string {
+	abs, err := filepath.Abs(r.root)
+	if err != nil {
+		return ""
+	}
+	if real, err := filepath.EvalSymlinks(abs); err == nil {
+		abs = real
+	}
+	return filepath.Dir(abs)
 }
 
 // run executes git in the vault root and returns what it wrote to stdout,
