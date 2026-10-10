@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -174,6 +175,30 @@ func TestGenerateSecretKeyRoundtrip(t *testing.T) {
 func TestWithSecretKeyRejectsBadLength(t *testing.T) {
 	_, err := Open(context.Background(), filepath.Join(t.TempDir(), "x.db"), WithSecretKey([]byte("short")))
 	wantErr(t, err, ErrSecretKey)
+}
+
+// A database left with looser permissions (restored from a backup, or created
+// by an earlier build) is tightened on open: it holds credential hashes.
+func TestOpenTightensAnExistingDatabaseFile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX file modes")
+	}
+	path := filepath.Join(t.TempDir(), "gandalf.db")
+	if err := os.WriteFile(path, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	s, err := Open(context.Background(), path, fastSync)
+	wantErr(t, err, nil)
+	defer s.Close()
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if perm := info.Mode().Perm(); perm != 0o600 {
+		t.Errorf("database mode = %o, want 600", perm)
+	}
 }
 
 func TestOpenCreatesPrivateFileAndPersists(t *testing.T) {

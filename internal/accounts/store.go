@@ -82,6 +82,15 @@ func Open(ctx context.Context, path string, opts ...Option) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create accounts database: %w", err)
 	}
+	// O_CREATE sets the mode only on a file it creates. One that already
+	// exists (restored from a backup, or made by an earlier build) keeps
+	// whatever it had, and it holds credential hashes, so it is tightened.
+	if info, err := f.Stat(); err == nil && info.Mode().Perm()&0o077 != 0 {
+		if err := f.Chmod(0o600); err != nil {
+			f.Close()
+			return nil, fmt.Errorf("secure accounts database: %w", err)
+		}
+	}
 	if err := f.Close(); err != nil {
 		return nil, fmt.Errorf("create accounts database: %w", err)
 	}
