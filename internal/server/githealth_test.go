@@ -16,16 +16,23 @@ import (
 // left the incident vault in, and returns the function that puts it back.
 func breakGit(t *testing.T, h *harness) (repair func()) {
 	t.Helper()
+	return breakGitAt(t, h.vault.Root())
+}
+
+// breakGitAt is breakGit for the repository at root, which is how a test
+// breaks one core's repository and leaves the rest of its vaults alone.
+func breakGitAt(t *testing.T, root string) (repair func()) {
+	t.Helper()
 
 	cmd := exec.Command("git", "rev-parse", "HEAD")
-	cmd.Dir = h.vault.Root()
+	cmd.Dir = root
 	out, err := cmd.Output()
 	if err != nil {
 		t.Fatalf("rev-parse HEAD: %v", err)
 	}
 	id := strings.TrimSpace(string(out))
 
-	object := filepath.Join(h.vault.Root(), ".git", "objects", id[:2], id[2:])
+	object := filepath.Join(root, ".git", "objects", id[:2], id[2:])
 	original, err := os.ReadFile(object)
 	if err != nil {
 		t.Fatal(err)
