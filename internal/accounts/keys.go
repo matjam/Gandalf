@@ -28,6 +28,16 @@ type Key struct {
 	Revoked time.Time // Zero if not revoked.
 }
 
+// String and GoString print the ids only: the label is free text a person
+// typed (Personal), and %v of a Key must not carry it into a log line.
+func (k Key) String() string   { return "Key{" + k.ID + "}" }
+func (k Key) GoString() string { return k.String() }
+
+// LogValue makes slog print the opaque ids only.
+func (k Key) LogValue() slog.Value {
+	return slog.GroupValue(slog.String("id", k.ID), slog.String("user", k.UserID))
+}
+
 // Active reports whether the key would authenticate at time now.
 func (k Key) Active(now time.Time) bool {
 	return k.Revoked.IsZero() && now.Before(k.Expires)

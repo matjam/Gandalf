@@ -8,6 +8,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"regexp"
 	"strings"
@@ -29,12 +30,26 @@ type Remote struct {
 	SetBy     string // User id of whoever last changed it.
 }
 
+// String and GoString print the vault id only: the URL is Personal data.
+func (r Remote) String() string   { return "Remote{" + r.VaultID + "}" }
+func (r Remote) GoString() string { return r.String() }
+
+// LogValue makes slog print the opaque vault id only.
+func (r Remote) LogValue() slog.Value { return slog.GroupValue(slog.String("vault", r.VaultID)) }
+
 const maxRemoteURLBytes = 2048
 
 // scpURL is the scp-like form git accepts, user@host:path. The user and host
 // are restricted to plain characters, and the first character of each is
 // not '-'.
-var scpURL = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9._-]*@[A-Za-z0-9][A-Za-z0-9.-]*:[^\s:][^\s]*$`)
+var scpURL = regexp.MustCompile(`^` + sshUser + `@[A-Za-z0-9][A-Za-z0-9.-]*:[^\s:][^\s]*$`)
+
+// sshUser is what may stand before the @ of a remote, in either form: plain
+// characters, and not starting with '-', so that git and ssh cannot read the
+// user@host argument as an option.
+const sshUser = `[A-Za-z0-9_][A-Za-z0-9._-]*`
+
+var sshUserOnly = regexp.MustCompile(`^` + sshUser + `$`)
 
 // validateRemoteURL admits only SSH remotes: the server holds an SSH deploy
 // key for the vault, so nothing else is useful, and git's other transports
@@ -56,6 +71,14 @@ func validateRemoteURL(raw string) error {
 		if err != nil || u.Host == "" || u.Hostname() == "" || strings.HasPrefix(u.Hostname(), "-") ||
 			u.RawQuery != "" || u.Fragment != "" || u.Path == "" {
 			return bad("is not a valid ssh:// URL")
+		}
+		// The user is checked decoded, as git will see it: "%2d" is a dash and
+		// "%0a" a newline. A password has no use (the server authenticates with
+		// its deploy key) and would be one more credential to keep.
+		if u.User != nil {
+			if _, hasPassword := u.User.Password(); hasPassword || !sshUserOnly.MatchString(u.User.Username()) {
+				return bad("has a user that is not plain, or carries a password")
+			}
 		}
 		return nil
 	}

@@ -126,3 +126,62 @@ func TestValuesRefusePrintingPersonalData(t *testing.T) {
 		t.Errorf("explicit field access broken")
 	}
 }
+
+// The other records that carry a person's words (a key's label, a team
+// roster's handles, a remote's URL) refuse to print them too, so passing one
+// to a logger or %v cannot leak what the field accessor deliberately returns.
+func TestRecordsRefusePrintingPersonalData(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+
+	u, _, err := e.s.CreateUser(ctx, e.adminP, secretHandle, "")
+	wantErr(t, err, nil)
+	k, err := e.s.IssueKey(ctx, e.adminP, u.ID, secretLabel, 0)
+	wantErr(t, err, nil)
+	wantErr(t, e.s.AddMember(ctx, e.adminP, e.team.ID, u.ID, RoleMember), nil)
+	_, err = e.s.GenerateRemoteKey(ctx, e.adminP, e.team.ID)
+	wantErr(t, err, nil)
+	wantErr(t, e.s.SetRemoteURL(ctx, e.adminP, e.team.ID, secretRemote), nil)
+
+	keys, err := e.s.ListKeys(ctx, e.adminP, u.ID)
+	wantErr(t, err, nil)
+	members, err := e.s.MembersOf(ctx, e.adminP, e.team.ID)
+	wantErr(t, err, nil)
+	remote, err := e.s.GetRemote(ctx, e.adminP, e.team.ID)
+	wantErr(t, err, nil)
+
+	var labelled bool
+	for _, listed := range keys {
+		labelled = labelled || (listed.ID == k.Key.ID && listed.Label == secretLabel)
+	}
+	if !labelled || remote.URL != secretRemote {
+		t.Fatal("explicit field access is broken")
+	}
+	var member TeamMember
+	for _, m := range members {
+		if m.UserID == u.ID {
+			member = m
+		}
+	}
+
+	var logBuf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logBuf, nil))
+	logger.Info("test", "key", k.Key, "member", member, "remote", remote)
+
+	values := map[string]any{"Key": k.Key, "*Key": &k.Key, "TeamMember": member, "Remote": remote, "*Remote": &remote}
+	for name, v := range values {
+		for _, format := range []string{"%v", "%+v", "%#v", "%s"} {
+			out := fmt.Sprintf(format, v)
+			for _, bad := range []string{secretLabel, secretHandle, secretRemote} {
+				if strings.Contains(out, bad) {
+					t.Errorf("Sprintf(%q, %s) contains %q: %s", format, name, bad, out)
+				}
+			}
+		}
+	}
+	for _, bad := range []string{secretLabel, secretHandle, secretRemote} {
+		if strings.Contains(logBuf.String(), bad) {
+			t.Errorf("slog output contains %q: %s", bad, logBuf.String())
+		}
+	}
+}

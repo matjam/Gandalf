@@ -29,6 +29,13 @@ type TeamMember struct {
 	Added  time.Time
 }
 
+// String and GoString print the id only, because Handle is Personal.
+func (m TeamMember) String() string   { return "TeamMember{" + m.UserID + "}" }
+func (m TeamMember) GoString() string { return m.String() }
+
+// LogValue makes slog print the opaque id only.
+func (m TeamMember) LogValue() slog.Value { return slog.GroupValue(slog.String("user", m.UserID)) }
+
 const teamColumns = `id, slug, name, created, archived`
 
 func scanTeam(r scanner) (Team, error) {
