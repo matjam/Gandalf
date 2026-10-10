@@ -32,11 +32,11 @@ type topicEntry struct {
 // Shipped documents are consulted first, and by any delivery: the correction
 // history is unlisted but still a topic a caller may name. A vault-declared
 // topic cannot shadow a shipped one, because topic_new refuses the id.
-func (s *Server) lookupTopic(id string) (topicEntry, bool) {
+func (c *Core) lookupTopic(id string) (topicEntry, bool) {
 	if doc, ok := instructions.Lookup(id); ok {
 		return topicEntry{ID: doc.ID, Path: doc.Path, Title: doc.Title, When: doc.When}, true
 	}
-	if t, ok := s.vault.Topics().Lookup(id); ok {
+	if t, ok := c.vault.Topics().Lookup(id); ok {
 		return topicEntry{ID: t.ID, Path: t.Path, Title: t.Title, When: t.When}, true
 	}
 	return topicEntry{}, false
@@ -44,20 +44,28 @@ func (s *Server) lookupTopic(id string) (topicEntry, bool) {
 
 // topicSummaries is the table boot and list hand out: the shipped topics in
 // their manifest order, then the vault's own in declaration order.
-func (s *Server) topicSummaries() []TopicSummary {
+func (c *scoped) topicSummaries() []TopicSummary {
 	var out []TopicSummary
 
 	for _, doc := range instructions.Topics() {
+		// The personal vault is offered every shipped topic, served from the
+		// binary where it has no copy. A team vault is offered only what it
+		// actually holds: its contents are the team's to choose, and listing a
+		// topic it never adopted would send callers to read a default as if it
+		// were the team's rule.
+		if c.slug != "" && !c.vault.Exists(doc.Path) {
+			continue
+		}
 		out = append(out, TopicSummary{
-			Ref:   s.canonical(doc.Path).String(),
+			Ref:   c.qualify(c.canonical(doc.Path)),
 			Title: doc.Title,
 			When:  doc.When,
 		})
 	}
 
-	for _, t := range s.vault.Topics().Topics {
+	for _, t := range c.vault.Topics().Topics {
 		out = append(out, TopicSummary{
-			Ref:   vault.Ref{Kind: KindTopic, Name: t.ID}.String(),
+			Ref:   c.qualify(vault.Ref{Kind: KindTopic, Name: t.ID}),
 			Title: t.Title,
 			When:  t.When,
 		})
@@ -76,6 +84,7 @@ type TopicNewInput struct {
 	Tags    []string `json:"tags,omitempty" jsonschema:"lowercase hyphenated tags"`
 	Related []string `json:"related,omitempty" jsonschema:"refs of related notes"`
 	Reason  string   `json:"reason" jsonschema:"why this topic is being declared, in a few words; it becomes the commit message"`
+	Vault   string   `json:"vault,omitempty" jsonschema:"a team slug to declare the topic in that team's vault; omit for your personal vault"`
 }
 
 // TopicNewOutput is the declared topic and the note that holds it.
@@ -94,7 +103,12 @@ type TopicNewOutput struct {
 // that applies to a kind of work. Both are readable and correctable the same
 // way once they exist.
 func (s *Server) topicNew(ctx context.Context, _ *sdk.CallToolRequest, in TopicNewInput) (*sdk.CallToolResult, TopicNewOutput, error) {
-	unlock := s.beginWrite()
+	sc, err := s.vaultFor(ctx, in.Vault)
+	if err != nil {
+		return nil, TopicNewOutput{}, err
+	}
+
+	unlock := sc.beginWrite()
 	defer unlock()
 
 	if err := checkReason(in.Reason); err != nil {
@@ -118,7 +132,7 @@ func (s *Server) topicNew(ctx context.Context, _ *sdk.CallToolRequest, in TopicN
 		return nil, TopicNewOutput{}, fmt.Errorf(
 			"topic:%s is a document Gandalf ships; edit that one rather than declaring another", id)
 	}
-	if _, declared := s.vault.Topics().Lookup(id); declared {
+	if _, declared := sc.vault.Topics().Lookup(id); declared {
 		return nil, TopicNewOutput{}, fmt.Errorf(
 			"topic:%s already exists; append to it with note_append instead of declaring it again", id)
 	}
@@ -129,25 +143,25 @@ func (s *Server) topicNew(ctx context.Context, _ *sdk.CallToolRequest, in TopicN
 		Title: title,
 		When:  strings.TrimSpace(in.When),
 	}
-	if s.vault.Exists(entry.Path) {
+	if sc.vault.Exists(entry.Path) {
 		return nil, TopicNewOutput{}, fmt.Errorf(
-			"a note already exists where topic:%s would be filed; it is addressed as %s", id, s.canonical(entry.Path))
+			"a note already exists where topic:%s would be filed; it is addressed as %s", id, sc.qualify(sc.canonical(entry.Path)))
 	}
 
 	// Every topic points back at the contract, as the shipped ones do, so the
 	// contract's backlinks list the whole set. It is only added when the
 	// contract is actually there to point at.
 	related := append([]string{}, in.Related...)
-	if s.vault.Exists(instructions.Contract().Path) {
+	if sc.vault.Exists(instructions.Contract().Path) {
 		related = add(related, []string{KindTopic + ":" + instructions.Contract().ID})
 	}
 
-	resolved := s.resolveLinks(related, in.Content)
+	resolved := sc.resolveLinks(related, in.Content)
 	if err := resolved.err(); err != nil {
 		return nil, TopicNewOutput{}, err
 	}
 
-	note, err := s.vault.NewNote(vault.NewNoteRequest{
+	note, err := sc.vault.NewNote(vault.NewNoteRequest{
 		Type:    schema.NoteType(topicType),
 		Title:   title,
 		Path:    entry.Path,
@@ -162,25 +176,25 @@ func (s *Server) topicNew(ctx context.Context, _ *sdk.CallToolRequest, in TopicN
 		return nil, TopicNewOutput{}, err
 	}
 
-	set := s.vault.Topics()
+	set := sc.vault.Topics()
 	if err := set.Add(entry); err != nil {
 		return nil, TopicNewOutput{}, err
 	}
 
-	if err := s.write(note); err != nil {
+	if err := sc.write(note); err != nil {
 		set.Remove(entry.ID)
 		return nil, TopicNewOutput{}, err
 	}
-	if err := s.vault.SetTopics(set); err != nil {
+	if err := sc.vault.SetTopics(set); err != nil {
 		return nil, TopicNewOutput{}, err
 	}
 
-	ref := s.canonical(note.Path)
-	warning := s.record("gandalf: topic new "+ref.String(), in.Reason)
+	ref := sc.canonical(note.Path)
+	warning := sc.record("gandalf: topic new "+ref.String(), in.Reason)
 
 	return nil, TopicNewOutput{
-		Topic:     TopicSummary{Ref: ref.String(), Title: entry.Title, When: entry.When},
-		Note:      s.ack(ref, note),
+		Topic:     TopicSummary{Ref: sc.qualify(ref), Title: entry.Title, When: entry.When},
+		Note:      sc.ack(ref, note),
 		GitNotice: GitNotice{GitWarning: warning},
 	}, nil
 }

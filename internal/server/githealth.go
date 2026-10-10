@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+
+	"github.com/matjam/gandalf/internal/git"
 )
 
 // GitNotice is embedded in the output of every tool that changes the vault,
@@ -20,11 +22,15 @@ type GitNotice struct {
 	GitWarning string `json:"git_warning,omitempty" jsonschema:"present when git is not working for this vault: the repository is broken or syncing is failing, so changes are saved but not committed or synced. Tell the user"`
 }
 
-// record commits the vault after a successful mutation and returns the warning
-// to put in the tool's result, or "" when the change was committed. A commit
-// failure is logged and surfaced but never returned as an error: the note
-// already landed, and failing the call would invite the model to write it
-// again.
+// commit commits the vault after a successful mutation, attributed to author
+// when there is one, and returns the warning to put in the tool's result, or ""
+// when the change was committed. A commit failure is logged and surfaced but
+// never returned as an error: the note already landed, and failing the call
+// would invite the model to write it again.
+//
+// Each Core has its own repository and so its own health: a broken team vault
+// warns the writer who changed that vault, and says nothing about the
+// personal one.
 //
 // The message is generated and says which tool changed which note; the reason
 // is the caller's and says why. Both are needed to make the history readable:
@@ -34,24 +40,24 @@ type GitNotice struct {
 //
 // A vault served with -no-git has no repository to be broken, so nothing is
 // warned about; that was the user's choice and boot says so.
-func (s *Server) record(message, reason string) string {
-	if s.git == nil {
+func (c *Core) commit(message, reason string, author *git.Author) string {
+	if c.git == nil {
 		return ""
 	}
 
-	err := s.git.Commit(message, reason)
+	err := c.git.CommitAs(message, reason, author)
 	if err == nil {
 		return ""
 	}
 
 	slog.Error("gandalf: git commit", "message", message, "error", err)
-	return s.commitWarning(err)
+	return c.commitWarning(err)
 }
 
 // commitWarning words the warning for a change that was saved but not
 // committed.
-func (s *Server) commitWarning(err error) string {
-	problems := s.git.Health().Problem()
+func (c *Core) commitWarning(err error) string {
+	problems := c.git.Health().Problem()
 	if len(problems) == 0 {
 		// Health says nothing is wrong, which would be a commit that failed
 		// without being recorded. Say what happened rather than nothing.
@@ -69,14 +75,14 @@ func (s *Server) commitWarning(err error) string {
 // breakage, and damage since should not be missed. A repair is committed to
 // on the way, under the write lock so the checkpoint cannot sweep up a note
 // another session is half-way through writing.
-func (s *Server) gitWarning() string {
-	if s.git == nil {
+func (c *Core) gitWarning() string {
+	if c.git == nil {
 		return ""
 	}
 
-	if err := s.git.Check(&s.Core.write); err != nil {
+	if err := c.git.Check(&c.write); err != nil {
 		slog.Error("gandalf: git is broken", "error", err)
 	}
 
-	return strings.Join(s.git.Health().Problem(), "; ")
+	return strings.Join(c.git.Health().Problem(), "; ")
 }

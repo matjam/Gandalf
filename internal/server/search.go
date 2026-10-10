@@ -3,6 +3,8 @@ package server
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"sort"
 	"strings"
 	"sync"
 
@@ -18,6 +20,8 @@ type SearchInput struct {
 	Kinds []string `json:"kinds,omitempty" jsonschema:"restrict to these categories, by either singular or plural name, such as session or standards"`
 
 	Limit int `json:"limit,omitempty" jsonschema:"maximum results; defaults to 10"`
+
+	Vault string `json:"vault,omitempty" jsonschema:"search only one vault: a team slug, or personal for your own; omit to search every vault you can reach"`
 }
 
 // SearchHit is one match.
@@ -42,7 +46,19 @@ type SearchOutput struct {
 
 	// Index says whether the results are complete. A search against a vault
 	// still being indexed is answered from what has landed so far, and saying
-	// so is the difference between "no such note" and "not yet indexed".
+	// so is the difference between "no such note" and "not yet indexed". When
+	// several vaults were searched it is the combined state: ready only when
+	// every one of them is.
+	Index IndexStatus `json:"index"`
+
+	// Vaults breaks the state down by vault, and is set only when more than one
+	// was searched. The personal vault is named "personal".
+	Vaults []VaultIndex `json:"vaults,omitempty"`
+}
+
+// VaultIndex is the state of one vault's search index.
+type VaultIndex struct {
+	Vault string      `json:"vault"`
 	Index IndexStatus `json:"index"`
 }
 
@@ -58,26 +74,141 @@ type searcher struct {
 	err   error
 }
 
+// personalName is what the personal vault is called where a vault has to be
+// named, such as the breakdown of a search across several.
+const personalName = "personal"
+
+// name is how this vault is called in results that list several.
+func (c *scoped) name() string {
+	if c.slug == "" {
+		return personalName
+	}
+	return c.slug
+}
+
 // search finds notes by meaning, reindexing first so results include edits
 // made during this session.
+//
+// By default it covers every vault the session can reach, because the point of
+// searching is to find what has already been written, and a team standard is
+// no less prior work than a personal note. Each vault has its own index; their
+// hits are merged by score, which is comparable across them because every
+// index is built with the same embedder.
 func (s *Server) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchInput) (*sdk.CallToolResult, SearchOutput, error) {
-	if s.embedder == nil {
+	targets, err := s.vaultsFor(ctx, in.Vault)
+	if err != nil {
+		return nil, SearchOutput{}, err
+	}
+
+	// A vault with no embedder cannot be searched, and is left out of a
+	// search across several rather than failing it. If that leaves nothing,
+	// search is not configured at all.
+	var searchable []*scoped
+	for _, sc := range targets {
+		if sc.embedder != nil {
+			searchable = append(searchable, sc)
+		}
+	}
+	if len(searchable) == 0 {
 		return nil, SearchOutput{}, fmt.Errorf(
 			"search is not configured: start the server with an embedding model, " +
 				"or use list and lint to find notes by name")
 	}
 
+	var (
+		out      = SearchOutput{Hits: []SearchHit{}}
+		statuses []VaultIndex
+	)
+	for _, sc := range searchable {
+		hits, status, indexed, err := sc.searchVault(ctx, in)
+		if err != nil {
+			// One vault failing must not take the others' results with it, but
+			// a search over a single vault has nothing else to return.
+			if len(searchable) == 1 {
+				return nil, SearchOutput{}, err
+			}
+			slog.Warn("gandalf: search vault", "vault", sc.name(), "error", err)
+			status = IndexStatus{State: IndexFailed, Error: err.Error(),
+				Note: "this vault could not be searched, so its notes are missing from the results"}
+		}
+
+		out.Hits = append(out.Hits, hits...)
+		out.Indexed += indexed
+		statuses = append(statuses, VaultIndex{Vault: sc.name(), Index: status})
+	}
+
+	// Merged by score, best first, then cut to the limit asked for. The sort is
+	// stable so that equal scores keep the order the vaults were searched in,
+	// which puts the caller's own notes first.
+	sort.SliceStable(out.Hits, func(i, j int) bool { return out.Hits[i].Score > out.Hits[j].Score })
+	limit := in.Limit
+	if limit <= 0 {
+		limit = defaultSearchLimit
+	}
+	if len(out.Hits) > limit {
+		out.Hits = out.Hits[:limit]
+	}
+
+	if len(statuses) == 1 {
+		out.Index = statuses[0].Index
+		return nil, out, nil
+	}
+	out.Index = combineStatus(statuses)
+	out.Vaults = statuses
+	return nil, out, nil
+}
+
+// defaultSearchLimit is how many hits a search returns when it is not told.
+// It matches the index's own default, so a search over several vaults returns
+// as many as one over a single vault would.
+const defaultSearchLimit = 10
+
+// combineStatus folds the states of several indexes into one a caller can act
+// on: ready only if every one is, building if any is still working, failed
+// only when something failed and nothing is still on its way.
+func combineStatus(vaults []VaultIndex) IndexStatus {
+	out := IndexStatus{State: IndexReady}
+
+	rank := map[IndexState]int{IndexReady: 0, IndexUnavailable: 1, IndexFailed: 2, IndexBuilding: 3}
+	for _, v := range vaults {
+		out.Done += v.Index.Done
+		out.Total += v.Index.Total
+		if rank[v.Index.State] > rank[out.State] {
+			out.State = v.Index.State
+		}
+		if out.Backend == "" {
+			out.Backend = v.Index.Backend
+		}
+	}
+
+	switch out.State {
+	case IndexBuilding:
+		out.Note = fmt.Sprintf(
+			"The search index is still being built for some vaults (%d of %d notes). search works "+
+				"now but only sees what has been indexed so far; a note it misses may exist. "+
+				"See vaults for which. Use list when you need certainty before it finishes.",
+			out.Done, out.Total)
+	case IndexFailed:
+		out.Note = "The search index failed to build for some vaults, so results are incomplete. " +
+			"See vaults for which. Find notes with list instead."
+	}
+	return out
+}
+
+// searchVault searches one vault and returns its hits with their refs
+// qualified for the caller.
+func (c *scoped) searchVault(ctx context.Context, in SearchInput) ([]SearchHit, IndexStatus, int, error) {
 	// Wait for the background pass, but only so long. A cold vault takes
 	// minutes to embed, and a search that never returns is worse than one that
 	// returns what exists so far and says the index is still building.
-	s.awaitIndex(ctx)
+	c.awaitIndex(ctx)
 
-	store, err := s.index()
+	store, err := c.index()
 	if err != nil {
-		return nil, SearchOutput{}, err
+		return nil, IndexStatus{}, 0, err
 	}
 
-	status := s.indexStatus()
+	status := c.indexStatus()
 
 	// Once the first pass is done, a freshness pass before searching is cheap:
 	// unchanged notes are skipped by fingerprint, so a note written a moment
@@ -85,31 +216,27 @@ func (s *Server) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchIn
 	// still running, the background goroutine already owns that work.
 	var report index.Report
 	if status.State == IndexReady {
-		report, err = index.Reindex(ctx, s.vault, store, s.embedder, func(path string) string {
-			return s.canonical(path).String()
+		report, err = index.Reindex(ctx, c.vault, store, c.embedder, func(path string) string {
+			return c.canonical(path).String()
 		})
 		if err != nil {
-			return nil, SearchOutput{}, err
+			return nil, IndexStatus{}, 0, err
 		}
 	}
 
-	results, err := store.Search(ctx, s.embedder, index.Query{
+	results, err := store.Search(ctx, c.embedder, index.Query{
 		Text:  in.Query,
-		Kinds: s.canonicalKinds(in.Kinds),
+		Kinds: c.canonicalKinds(in.Kinds),
 		Limit: in.Limit,
 	})
 	if err != nil {
-		return nil, SearchOutput{}, err
+		return nil, IndexStatus{}, 0, err
 	}
 
-	out := SearchOutput{
-		Hits:    make([]SearchHit, 0, len(results)),
-		Indexed: report.Indexed,
-		Index:   status,
-	}
+	hits := make([]SearchHit, 0, len(results))
 	for _, r := range results {
-		out.Hits = append(out.Hits, SearchHit{
-			Ref:      r.Ref,
+		hits = append(hits, SearchHit{
+			Ref:      c.qualifyString(r.Ref),
 			Title:    r.Title,
 			Heading:  r.Heading,
 			Snippet:  snippet(r.Snippet),
@@ -119,23 +246,23 @@ func (s *Server) search(ctx context.Context, _ *sdk.CallToolRequest, in SearchIn
 		})
 	}
 
-	return nil, out, nil
+	return hits, status, report.Indexed, nil
 }
 
 // index opens the store once, reusing it for the session.
-func (s *Server) index() (*index.Store, error) {
-	s.searcher.once.Do(func() {
-		s.searcher.store, s.searcher.err = index.Open(s.vault.Root(), s.embedder)
+func (c *Core) index() (*index.Store, error) {
+	c.searcher.once.Do(func() {
+		c.searcher.store, c.searcher.err = index.Open(c.vault.Root(), c.embedder)
 	})
-	return s.searcher.store, s.searcher.err
+	return c.searcher.store, c.searcher.err
 }
 
 // closeIndex releases the index, if one was opened.
-func (s *Server) closeIndex() error {
-	if s.searcher.store == nil {
+func (c *Core) closeIndex() error {
+	if c.searcher.store == nil {
 		return nil
 	}
-	return s.searcher.store.Close()
+	return c.searcher.store.Close()
 }
 
 // maxSnippetRunes bounds what a result returns. A search result is for

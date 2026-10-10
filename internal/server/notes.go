@@ -50,12 +50,12 @@ type NoteOutput struct {
 // the same question — and it was misnamed, since it served standards as
 // readily as topics.
 func (s *Server) noteRead(ctx context.Context, _ *sdk.CallToolRequest, in NoteReadInput) (*sdk.CallToolResult, NoteOutput, error) {
-	ref, path, err := s.resolve(in.Ref)
+	sc, ref, path, err := s.resolveRef(ctx, in.Ref, "")
 	if err != nil {
 		return nil, NoteOutput{}, err
 	}
 
-	if !s.vault.Exists(path) {
+	if !sc.vault.Exists(path) {
 		// A shipped document missing from the vault is served from the binary
 		// rather than refused: a session with no contract is worse than one
 		// reading the default.
@@ -64,23 +64,23 @@ func (s *Server) noteRead(ctx context.Context, _ *sdk.CallToolRequest, in NoteRe
 			if docErr != nil {
 				return nil, NoteOutput{}, docErr
 			}
-			s.markRead(ref)
+			sc.markRead(ref)
 			return nil, NoteOutput{
-				Ref:     ref.String(),
+				Ref:     sc.qualify(ref),
 				Title:   doc.Title,
 				Type:    string(doc.Type),
-				Content: s.toRefs(body),
+				Content: sc.toRefs(body),
 				Source:  "shipped",
 			}, nil
 		}
 	}
 
-	note, err := s.vault.Read(path)
+	note, err := sc.vault.Read(path)
 	if err != nil {
 		return nil, NoteOutput{}, err
 	}
 
-	return nil, s.describe(ref, note), nil
+	return nil, sc.describe(ref, note), nil
 }
 
 // shippedAt returns the shipped document filed at a vault path.
@@ -99,6 +99,7 @@ type SessionStartInput struct {
 	Tags    []string `json:"tags,omitempty" jsonschema:"lowercase hyphenated tags"`
 	Related []string `json:"related,omitempty" jsonschema:"refs of related notes"`
 	Reason  string   `json:"reason" jsonschema:"why this change is being made, in a few words; it becomes the commit message"`
+	Vault   string   `json:"vault,omitempty" jsonschema:"a team slug to open the session note in that team's vault; omit for your personal vault"`
 }
 
 // SessionStartOutput is the created session note.
@@ -116,19 +117,24 @@ type SessionStartOutput struct {
 // work that slugify the same on one day are far likelier than a deliberate
 // request to start over, and overwriting would destroy the record.
 func (s *Server) sessionStart(ctx context.Context, _ *sdk.CallToolRequest, in SessionStartInput) (*sdk.CallToolResult, SessionStartOutput, error) {
-	unlock := s.beginWrite()
+	sc, err := s.vaultFor(ctx, in.Vault)
+	if err != nil {
+		return nil, SessionStartOutput{}, err
+	}
+
+	unlock := sc.beginWrite()
 	defer unlock()
 
 	if err := checkReason(in.Reason); err != nil {
 		return nil, SessionStartOutput{}, err
 	}
 
-	resolved := s.resolveLinks(in.Related, "")
+	resolved := sc.resolveLinks(in.Related, "")
 	if err := resolved.err(); err != nil {
 		return nil, SessionStartOutput{}, err
 	}
 
-	note, err := s.vault.NewNote(vault.NewNoteRequest{
+	note, err := sc.vault.NewNote(vault.NewNoteRequest{
 		Type:    schema.NoteType(sessionCategory),
 		Title:   in.Title,
 		Tags:    in.Tags,
@@ -141,21 +147,21 @@ func (s *Server) sessionStart(ctx context.Context, _ *sdk.CallToolRequest, in Se
 		return nil, SessionStartOutput{}, err
 	}
 
-	ref := s.canonical(note.Path)
-	if s.vault.Exists(note.Path) {
+	ref := sc.canonical(note.Path)
+	if sc.vault.Exists(note.Path) {
 		return nil, SessionStartOutput{
-			Ref:  ref.String(),
+			Ref:  sc.qualify(ref),
 			Note: "a session note already exists for this title today; continuing it",
 		}, nil
 	}
 
-	if err := s.write(note); err != nil {
+	if err := sc.write(note); err != nil {
 		return nil, SessionStartOutput{}, err
 	}
 
-	warning := s.record("gandalf: session start "+ref.String(), in.Reason)
+	warning := sc.record("gandalf: session start "+ref.String(), in.Reason)
 	return nil, SessionStartOutput{
-		Ref:       ref.String(),
+		Ref:       sc.qualify(ref),
 		Created:   true,
 		GitNotice: GitNotice{GitWarning: warning},
 	}, nil
@@ -174,6 +180,7 @@ type NoteNewInput struct {
 	Related []string `json:"related,omitempty" jsonschema:"refs of related notes"`
 	Status  string   `json:"status,omitempty" jsonschema:"in-progress, complete, or superseded"`
 	Reason  string   `json:"reason" jsonschema:"why this change is being made, in a few words; it becomes the commit message"`
+	Vault   string   `json:"vault,omitempty" jsonschema:"a team slug to create the note in that team's vault; omit for your personal vault. Links in a note may only point at notes in the same vault"`
 }
 
 // noteNew creates a note, filing it by its category.
@@ -181,7 +188,12 @@ type NoteNewInput struct {
 // Sessions are excluded deliberately: session_start creates those,
 // setting the authorship and status the memory protocol expects.
 func (s *Server) noteNew(ctx context.Context, _ *sdk.CallToolRequest, in NoteNewInput) (*sdk.CallToolResult, NoteOutput, error) {
-	unlock := s.beginWrite()
+	sc, err := s.vaultFor(ctx, in.Vault)
+	if err != nil {
+		return nil, NoteOutput{}, err
+	}
+
+	unlock := sc.beginWrite()
 	defer unlock()
 
 	if err := checkReason(in.Reason); err != nil {
@@ -190,23 +202,23 @@ func (s *Server) noteNew(ctx context.Context, _ *sdk.CallToolRequest, in NoteNew
 
 	kind := strings.TrimSpace(in.Kind)
 
-	cat, ok := s.categoryFor(kind)
+	cat, ok := sc.categoryFor(kind)
 	switch {
 	case !ok:
 		return nil, NoteOutput{}, fmt.Errorf("unknown category %q (want one of %s)",
-			in.Kind, strings.Join(s.vault.Categories().CreatableNames(), ", "))
+			in.Kind, strings.Join(sc.vault.Categories().CreatableNames(), ", "))
 	case !cat.Creatable():
 		return nil, NoteOutput{}, fmt.Errorf("category %q cannot be created through the tools", in.Kind)
 	case cat.Name == sessionCategory:
 		return nil, NoteOutput{}, fmt.Errorf("use session_start to open a session note")
 	}
 
-	resolved := s.resolveLinks(in.Related, in.Content)
+	resolved := sc.resolveLinks(in.Related, in.Content)
 	if err := resolved.err(); err != nil {
 		return nil, NoteOutput{}, err
 	}
 
-	note, err := s.vault.NewNote(vault.NewNoteRequest{
+	note, err := sc.vault.NewNote(vault.NewNoteRequest{
 		Type:    schema.NoteType(cat.Name),
 		Title:   in.Title,
 		Scope:   in.Scope,
@@ -222,22 +234,22 @@ func (s *Server) noteNew(ctx context.Context, _ *sdk.CallToolRequest, in NoteNew
 		return nil, NoteOutput{}, err
 	}
 
-	if s.vault.Exists(note.Path) {
-		ref := s.canonical(note.Path)
+	if sc.vault.Exists(note.Path) {
+		ref := sc.canonical(note.Path)
 		return nil, NoteOutput{}, fmt.Errorf(
-			"%s already exists; append to it with note_append instead of replacing it", ref)
+			"%s already exists; append to it with note_append instead of replacing it", sc.qualify(ref))
 	}
 
-	if err := s.write(note); err != nil {
+	if err := sc.write(note); err != nil {
 		return nil, NoteOutput{}, err
 	}
 
-	ref := s.canonical(note.Path)
-	warning := s.record("gandalf: note new "+ref.String(), in.Reason)
+	ref := sc.canonical(note.Path)
+	warning := sc.record("gandalf: note new "+ref.String(), in.Reason)
 
 	// The caller wrote the whole body, so it has seen the note's text.
-	s.markRead(ref)
-	out := s.ack(ref, note)
+	sc.markRead(ref)
+	out := sc.ack(ref, note)
 	out.GitWarning = warning
 	return nil, out, nil
 }
@@ -252,7 +264,12 @@ type NoteAppendInput struct {
 
 // noteAppend adds to a note's body.
 func (s *Server) noteAppend(ctx context.Context, _ *sdk.CallToolRequest, in NoteAppendInput) (*sdk.CallToolResult, NoteOutput, error) {
-	unlock := s.beginWrite()
+	sc, rest, err := s.route(ctx, in.Ref)
+	if err != nil {
+		return nil, NoteOutput{}, err
+	}
+
+	unlock := sc.beginWrite()
 	defer unlock()
 
 	if strings.TrimSpace(in.Content) == "" {
@@ -262,17 +279,17 @@ func (s *Server) noteAppend(ctx context.Context, _ *sdk.CallToolRequest, in Note
 		return nil, NoteOutput{}, err
 	}
 
-	ref, path, err := s.writable(in.Ref)
+	ref, path, err := sc.writable(rest)
 	if err != nil {
 		return nil, NoteOutput{}, err
 	}
 
-	resolved := s.resolveLinks(nil, in.Content)
+	resolved := sc.resolveLinks(nil, in.Content)
 	if err := resolved.err(); err != nil {
 		return nil, NoteOutput{}, err
 	}
 
-	note, err := s.vault.Read(path)
+	note, err := sc.vault.Read(path)
 	if err != nil {
 		return nil, NoteOutput{}, err
 	}
@@ -280,12 +297,12 @@ func (s *Server) noteAppend(ctx context.Context, _ *sdk.CallToolRequest, in Note
 	note.Append(in.Heading, resolved.Body)
 	note.Touch(schema.Today())
 
-	if err := s.write(note); err != nil {
+	if err := sc.write(note); err != nil {
 		return nil, NoteOutput{}, err
 	}
 
-	warning := s.record("gandalf: note append "+ref.String(), in.Reason)
-	out := s.ack(ref, note)
+	warning := sc.record("gandalf: note append "+ref.String(), in.Reason)
+	out := sc.ack(ref, note)
 	out.GitWarning = warning
 	return nil, out, nil
 }
@@ -295,19 +312,19 @@ func (s *Server) noteAppend(ctx context.Context, _ *sdk.CallToolRequest, in Note
 // Only those notes are touched. Writing a note never changes that note's own
 // block — a link it holds is an inbound link somewhere else — so nothing needs
 // re-reading afterwards either.
-func (s *Server) write(note *vault.Note) error {
+func (c *scoped) write(note *vault.Note) error {
 	var before []string
-	if s.vault.Exists(note.Path) {
-		if previous, err := s.vault.Read(note.Path); err == nil {
+	if c.vault.Exists(note.Path) {
+		if previous, err := c.vault.Read(note.Path); err == nil {
 			before = previous.OutgoingLinks()
 		}
 	}
 
-	if err := s.vault.Write(note); err != nil {
+	if err := c.vault.Write(note); err != nil {
 		return err
 	}
 
-	_, err := s.vault.ApplyBacklinks(note.Path, before, note.OutgoingLinks())
+	_, err := c.vault.ApplyBacklinks(note.Path, before, note.OutgoingLinks())
 	return err
 }
 
@@ -327,19 +344,24 @@ type NoteUpdateInput struct {
 
 // noteUpdate changes a note's metadata, never its body.
 func (s *Server) noteUpdate(ctx context.Context, _ *sdk.CallToolRequest, in NoteUpdateInput) (*sdk.CallToolResult, NoteOutput, error) {
-	unlock := s.beginWrite()
+	sc, rest, err := s.route(ctx, in.Ref)
+	if err != nil {
+		return nil, NoteOutput{}, err
+	}
+
+	unlock := sc.beginWrite()
 	defer unlock()
 
 	if err := checkReason(in.Reason); err != nil {
 		return nil, NoteOutput{}, err
 	}
 
-	ref, path, err := s.writable(in.Ref)
+	ref, path, err := sc.writable(rest)
 	if err != nil {
 		return nil, NoteOutput{}, err
 	}
 
-	note, err := s.vault.Read(path)
+	note, err := sc.vault.Read(path)
 	if err != nil {
 		return nil, NoteOutput{}, err
 	}
@@ -352,25 +374,25 @@ func (s *Server) noteUpdate(ctx context.Context, _ *sdk.CallToolRequest, in Note
 		note.FM.Status = status
 	}
 
-	resolved := s.resolveLinks(in.AddRelated, "")
+	resolved := sc.resolveLinks(in.AddRelated, "")
 	if err := resolved.err(); err != nil {
 		return nil, NoteOutput{}, err
 	}
 
 	note.FM.Tags = add(remove(note.FM.Tags, in.RemoveTags), in.AddTags)
-	note.FM.Related = add(s.dropRelated(note.FM.Related, in.RemoveRelated), resolved.Related)
+	note.FM.Related = add(sc.dropRelated(note.FM.Related, in.RemoveRelated), resolved.Related)
 	note.Touch(schema.Today())
 
 	if issues := note.FM.Validate(); schema.HasErrors(issues) {
-		return nil, NoteOutput{}, fmt.Errorf("update would leave %s invalid: %s", ref, issues[0].Message)
+		return nil, NoteOutput{}, fmt.Errorf("update would leave %s invalid: %s", sc.qualify(ref), issues[0].Message)
 	}
 
-	if err := s.write(note); err != nil {
+	if err := sc.write(note); err != nil {
 		return nil, NoteOutput{}, err
 	}
 
-	warning := s.record("gandalf: note update "+ref.String(), in.Reason)
-	out := s.ack(ref, note)
+	warning := sc.record("gandalf: note update "+ref.String(), in.Reason)
+	out := sc.ack(ref, note)
 	out.GitWarning = warning
 	return nil, out, nil
 }
@@ -382,19 +404,19 @@ func (s *Server) noteUpdate(ctx context.Context, _ *sdk.CallToolRequest, in Note
 // where the note is recorded as seen. Replacement requires that: a caller
 // holding the current text can check what a bounded edit removed, and one that
 // has not read the note cannot.
-func (s *Server) describe(ref vault.Ref, n *vault.Note) NoteOutput {
-	s.markRead(ref)
+func (c *scoped) describe(ref vault.Ref, n *vault.Note) NoteOutput {
+	c.markRead(ref)
 
 	return NoteOutput{
-		Ref:     ref.String(),
+		Ref:     c.qualify(ref),
 		Title:   n.Title(),
 		Type:    string(n.FM.Type),
 		Created: n.FM.Created.String(),
 		Updated: n.FM.Updated.String(),
 		Tags:    n.FM.Tags,
-		Related: s.refsFor(n.FM.Related),
+		Related: c.refsFor(n.FM.Related),
 		Status:  string(n.FM.Status),
-		Content: s.toRefs(n.Body),
+		Content: c.toRefs(n.Body),
 	}
 }
 
@@ -403,15 +425,15 @@ func (s *Server) describe(ref vault.Ref, n *vault.Note) NoteOutput {
 // The caller already holds what it wrote, and the whole note grows with every
 // append, so echoing it spends context on every write. It does not mark the
 // note as read: the caller has seen its own change, not the text around it.
-func (s *Server) ack(ref vault.Ref, n *vault.Note) NoteOutput {
+func (c *scoped) ack(ref vault.Ref, n *vault.Note) NoteOutput {
 	return NoteOutput{
-		Ref:     ref.String(),
+		Ref:     c.qualify(ref),
 		Title:   n.Title(),
 		Type:    string(n.FM.Type),
 		Created: n.FM.Created.String(),
 		Updated: n.FM.Updated.String(),
 		Tags:    n.FM.Tags,
-		Related: s.refsFor(n.FM.Related),
+		Related: c.refsFor(n.FM.Related),
 		Status:  string(n.FM.Status),
 	}
 }
@@ -438,7 +460,7 @@ func add(existing, values []string) []string {
 // the ones pointing at notes that no longer exist, and resolving is exactly what
 // fails for those: add_related refuses a link it cannot resolve, which is right
 // for a new link and would make a stale one permanent.
-func (s *Server) dropRelated(existing, values []string) []string {
+func (c *scoped) dropRelated(existing, values []string) []string {
 	if len(values) == 0 {
 		return existing
 	}
@@ -450,10 +472,10 @@ func (s *Server) dropRelated(existing, values []string) []string {
 		}
 	}
 
-	refs := s.refsFor(existing)
+	refs := c.refsFor(existing)
 	kept := existing[:0]
 	for i, target := range existing {
-		if drop[target] || drop[refs[i]] {
+		if drop[target] || drop[refs[i]] || drop[strings.TrimPrefix(refs[i], c.prefix())] {
 			continue
 		}
 		kept = append(kept, target)

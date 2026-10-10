@@ -12,7 +12,8 @@ import (
 
 // LintInput selects what to validate.
 type LintInput struct {
-	Ref string `json:"ref,omitempty" jsonschema:"a single note to check; omit to check the whole vault"`
+	Ref   string `json:"ref,omitempty" jsonschema:"a single note to check; omit to check whole vaults"`
+	Vault string `json:"vault,omitempty" jsonschema:"restrict the check to one vault: a team slug, or personal for your own; omit to check every vault you can reach"`
 }
 
 // Finding is one lint result, addressed by ref rather than by path.
@@ -32,36 +33,49 @@ type LintOutput struct {
 	Clean    bool      `json:"clean"`
 }
 
-// lint validates one note or the whole vault.
+// lint validates one note, one vault, or every vault the session can reach.
+//
+// Findings from a team vault carry the team in their refs, so a finding can be
+// fed straight back into note_read or note_update.
 func (s *Server) lint(ctx context.Context, _ *sdk.CallToolRequest, in LintInput) (*sdk.CallToolResult, LintOutput, error) {
-	var paths []string
+	var (
+		targets []*scoped
+		paths   []string
+	)
 	if in.Ref != "" {
-		_, path, err := s.resolve(in.Ref)
+		sc, _, path, err := s.resolveRef(ctx, in.Ref, in.Vault)
 		if err != nil {
 			return nil, LintOutput{}, err
 		}
-		paths = append(paths, path)
+		targets, paths = []*scoped{sc}, []string{path}
+	} else {
+		var err error
+		if targets, err = s.vaultsFor(ctx, in.Vault); err != nil {
+			return nil, LintOutput{}, err
+		}
 	}
 
-	findings, err := s.vault.Lint(paths...)
-	if err != nil {
-		return nil, LintOutput{}, err
-	}
+	out := LintOutput{Findings: []Finding{}}
 
-	out := LintOutput{Findings: make([]Finding, 0, len(findings))}
+	for _, sc := range targets {
+		findings, err := sc.vault.Lint(paths...)
+		if err != nil {
+			return nil, LintOutput{}, err
+		}
 
-	for _, f := range findings {
-		out.Findings = append(out.Findings, Finding{
-			Ref:      s.canonical(f.Path).String(),
-			Line:     f.Line,
-			Field:    f.Field,
-			Severity: string(f.Severity),
-			Message:  f.Message,
-		})
-		if f.Severity == schema.SeverityError {
-			out.Errors++
-		} else {
-			out.Warnings++
+		for _, f := range findings {
+			out.Findings = append(out.Findings, Finding{
+				Ref:      sc.qualify(sc.canonical(f.Path)),
+				Line:     f.Line,
+				Field:    f.Field,
+				Severity: string(f.Severity),
+				Message:  f.Message,
+			})
+			if f.Severity == schema.SeverityError {
+				out.Errors++
+			} else {
+				out.Warnings++
+			}
 		}
 	}
 
@@ -72,7 +86,7 @@ func (s *Server) lint(ctx context.Context, _ *sdk.CallToolRequest, in LintInput)
 
 // CorrectInput records a correction from the user.
 type CorrectInput struct {
-	Target string `json:"target" jsonschema:"where the rule belongs: contract, topic:<name>, or standard:<name>"`
+	Target string `json:"target" jsonschema:"where the rule belongs: contract, topic:<name>, or standard:<name>. A rule goes to your personal vault unless the target names a team, as in @platform:standard:testing or @platform:contract"`
 
 	Guidance string `json:"guidance" jsonschema:"the rule, stated as an instruction to follow in future"`
 
@@ -107,24 +121,38 @@ type CorrectOutput struct {
 // belongs in the history, where it stops the same argument recurring without
 // costing context every time.
 func (s *Server) correct(ctx context.Context, _ *sdk.CallToolRequest, in CorrectInput) (*sdk.CallToolResult, CorrectOutput, error) {
-	unlock := s.beginWrite()
-	defer unlock()
-
 	if in.Guidance == "" {
 		return nil, CorrectOutput{}, fmt.Errorf("a correction needs guidance to record")
 	}
 
-	target := in.Target
-	if target == "" || target == "contract" {
-		target = "topic:operating"
+	// The target says which vault the rule belongs to. Unscoped is the
+	// caller's own, which is where a correction from a member of a team goes
+	// by default: a team's rules are the team's to change, and the policy
+	// below is what says who may.
+	sc, rest, err := s.route(ctx, in.Target)
+	if err != nil {
+		return nil, CorrectOutput{}, fmt.Errorf("correction target %q: %w", in.Target, err)
+	}
+	if rest == "" || rest == "contract" {
+		rest = "topic:operating"
 	}
 
-	ref, path, err := s.writable(target)
+	if sc.slug != "" && s.CorrectPolicy != nil {
+		if err := s.CorrectPolicy(ctx, sc.slug); err != nil {
+			return nil, CorrectOutput{}, fmt.Errorf(
+				"recording a correction in team %s is not permitted: %w", sc.slug, err)
+		}
+	}
+
+	unlock := sc.beginWrite()
+	defer unlock()
+
+	ref, path, err := sc.writable(rest)
 	if err != nil {
 		return nil, CorrectOutput{}, fmt.Errorf("correction target %q: %w", in.Target, err)
 	}
 
-	note, err := s.vault.Read(path)
+	note, err := sc.vault.Read(path)
 	if err != nil {
 		return nil, CorrectOutput{}, err
 	}
@@ -138,14 +166,14 @@ func (s *Server) correct(ctx context.Context, _ *sdk.CallToolRequest, in Correct
 	}
 	note.Touch(schema.Today())
 
-	if err := s.write(note); err != nil {
+	if err := sc.write(note); err != nil {
 		return nil, CorrectOutput{}, err
 	}
 
-	out := CorrectOutput{Ref: ref.String()}
+	out := CorrectOutput{Ref: sc.qualify(ref)}
 
 	if in.Reason != "" {
-		historyRef, err := s.recordReason(ref.String(), in.Guidance, in.Reason)
+		historyRef, err := sc.recordReason(ref.String(), in.Guidance, in.Reason)
 		if err != nil {
 			return nil, CorrectOutput{}, err
 		}
@@ -155,18 +183,28 @@ func (s *Server) correct(ctx context.Context, _ *sdk.CallToolRequest, in Correct
 	// The guidance is the reason: a correction's why is the rule it records,
 	// and CorrectInput's own Reason is what prompted it, which belongs in the
 	// history rather than in the commit.
-	out.GitWarning = s.record("gandalf: correct "+ref.String(), in.Guidance)
+	out.GitWarning = sc.record("gandalf: correct "+ref.String(), in.Guidance)
 	return nil, out, nil
 }
 
 // recordReason appends the reasoning behind a correction to the history.
-func (s *Server) recordReason(target, guidance, reason string) (string, error) {
-	ref, path, err := s.writable("topic:corrections")
+func (c *scoped) recordReason(target, guidance, reason string) (string, error) {
+	// A team's vault is not required to keep a correction history. The rule
+	// itself is already in place by the time this runs, and failing the whole
+	// call over a missing log would leave a recorded rule reported as an
+	// error, so the reason is simply not kept there.
+	if c.slug != "" {
+		if _, path, err := c.resolve("topic:corrections"); err != nil || !c.vault.Exists(path) {
+			return "", nil
+		}
+	}
+
+	ref, path, err := c.writable("topic:corrections")
 	if err != nil {
 		return "", err
 	}
 
-	note, err := s.vault.Read(path)
+	note, err := c.vault.Read(path)
 	if err != nil {
 		return "", err
 	}
@@ -178,11 +216,11 @@ func (s *Server) recordReason(target, guidance, reason string) (string, error) {
 	)
 	note.Touch(today)
 
-	if err := s.write(note); err != nil {
+	if err := c.write(note); err != nil {
 		return "", err
 	}
 
-	return ref.String(), nil
+	return c.qualify(ref), nil
 }
 
 // firstLine returns a short title drawn from the guidance: its first sentence,

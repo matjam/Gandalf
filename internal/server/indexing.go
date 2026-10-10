@@ -87,8 +87,8 @@ func newIndexer() *indexer {
 // start launches the first pass, once. Later calls are no-ops: subsequent
 // freshness is handled by reindexing on demand inside search, which is cheap
 // once the expensive first pass is done.
-func (s *Server) startIndexing(ctx context.Context) {
-	if s.embedder == nil {
+func (c *Core) startIndexing(ctx context.Context) {
+	if c.embedder == nil {
 		return
 	}
 
@@ -97,35 +97,35 @@ func (s *Server) startIndexing(ctx context.Context) {
 	// detached from the caller's, with its own cancel for shutdown to use.
 	ctx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 
-	s.indexer.mu.Lock()
-	if s.indexer.started {
-		s.indexer.mu.Unlock()
+	c.indexer.mu.Lock()
+	if c.indexer.started {
+		c.indexer.mu.Unlock()
 		cancel()
 		return
 	}
-	s.indexer.started = true
-	s.indexer.state = IndexBuilding
-	s.indexer.cancel = cancel
-	s.indexer.mu.Unlock()
+	c.indexer.started = true
+	c.indexer.state = IndexBuilding
+	c.indexer.cancel = cancel
+	c.indexer.mu.Unlock()
 
 	go func() {
-		defer close(s.indexer.ready)
+		defer close(c.indexer.ready)
 
-		store, err := s.index()
+		store, err := c.index()
 		if err != nil {
-			s.indexer.finish(err)
+			c.indexer.finish(err)
 			return
 		}
 
-		_, err = index.ReindexWith(ctx, s.vault, store, s.embedder,
-			func(path string) string { return s.canonical(path).String() },
+		_, err = index.ReindexWith(ctx, c.vault, store, c.embedder,
+			func(path string) string { return c.canonical(path).String() },
 			func(ev index.Event) {
-				s.indexer.mu.Lock()
-				s.indexer.done, s.indexer.total = ev.Done, ev.Total
-				s.indexer.mu.Unlock()
+				c.indexer.mu.Lock()
+				c.indexer.done, c.indexer.total = ev.Done, ev.Total
+				c.indexer.mu.Unlock()
 			})
 
-		s.indexer.finish(err)
+		c.indexer.finish(err)
 	}()
 }
 
@@ -156,10 +156,10 @@ func (i *indexer) finish(err error) {
 // Waiting is the point. Closing the index out from under a goroutine still
 // writing to it leaves a handle open, which on Windows means the file cannot
 // be deleted — a temporary vault then outlives the test that made it.
-func (s *Server) stopIndexing() {
-	s.indexer.mu.Lock()
-	started, cancel := s.indexer.started, s.indexer.cancel
-	s.indexer.mu.Unlock()
+func (c *Core) stopIndexing() {
+	c.indexer.mu.Lock()
+	started, cancel := c.indexer.started, c.indexer.cancel
+	c.indexer.mu.Unlock()
 
 	if !started {
 		return
@@ -167,12 +167,12 @@ func (s *Server) stopIndexing() {
 	if cancel != nil {
 		cancel()
 	}
-	<-s.indexer.ready
+	<-c.indexer.ready
 }
 
 // status reports what the index is doing.
-func (s *Server) indexStatus() IndexStatus {
-	if s.embedder == nil {
+func (c *Core) indexStatus() IndexStatus {
+	if c.embedder == nil {
 		return IndexStatus{
 			State: IndexUnavailable,
 			Note: "No embedding model is configured, so search will not work. " +
@@ -180,20 +180,20 @@ func (s *Server) indexStatus() IndexStatus {
 		}
 	}
 
-	s.indexer.mu.Lock()
-	defer s.indexer.mu.Unlock()
+	c.indexer.mu.Lock()
+	defer c.indexer.mu.Unlock()
 
 	out := IndexStatus{
-		State:   s.indexer.state,
-		Done:    s.indexer.done,
-		Total:   s.indexer.total,
-		Backend: s.backendName(),
+		State:   c.indexer.state,
+		Done:    c.indexer.done,
+		Total:   c.indexer.total,
+		Backend: c.backendName(),
 	}
 	if out.State == "" {
 		out.State = IndexBuilding
 	}
-	if s.indexer.err != nil {
-		out.Error = s.indexer.err.Error()
+	if c.indexer.err != nil {
+		out.Error = c.indexer.err.Error()
 	}
 
 	switch out.State {
@@ -224,14 +224,14 @@ var indexWait = 10 * time.Second
 // awaitIndex waits for the first pass, giving up after the deadline so a
 // search returns partial results rather than blocking a session on a cold
 // index. Reporting a partial answer honestly beats a call that never returns.
-func (s *Server) awaitIndex(ctx context.Context) {
-	s.startIndexing(ctx)
+func (c *Core) awaitIndex(ctx context.Context) {
+	c.startIndexing(ctx)
 
 	timer := time.NewTimer(indexWait)
 	defer timer.Stop()
 
 	select {
-	case <-s.indexer.ready:
+	case <-c.indexer.ready:
 	case <-timer.C:
 	case <-ctx.Done():
 	}
@@ -240,10 +240,10 @@ func (s *Server) awaitIndex(ctx context.Context) {
 // backendName reports the embedder's compute path when it exposes one. Not
 // every embedder has the notion — a remote endpoint's engine is its own
 // business — so this is asked for rather than required.
-func (s *Server) backendName() string {
+func (c *Core) backendName() string {
 	type backended interface{ Backend() embed.Backend }
 
-	if b, ok := s.embedder.(backended); ok {
+	if b, ok := c.embedder.(backended); ok {
 		return string(b.Backend())
 	}
 	return ""

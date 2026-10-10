@@ -57,14 +57,19 @@ const (
 
 // noteReplace rewrites part of a note's body.
 func (s *Server) noteReplace(ctx context.Context, _ *sdk.CallToolRequest, in NoteReplaceInput) (*sdk.CallToolResult, NoteReplaceOutput, error) {
-	unlock := s.beginWrite()
+	sc, rest, err := s.route(ctx, in.Ref)
+	if err != nil {
+		return nil, NoteReplaceOutput{}, err
+	}
+
+	unlock := sc.beginWrite()
 	defer unlock()
 
 	if err := checkReason(in.Reason); err != nil {
 		return nil, NoteReplaceOutput{}, err
 	}
 
-	ref, path, err := s.writable(in.Ref)
+	ref, path, err := sc.writable(rest)
 	if err != nil {
 		return nil, NoteReplaceOutput{}, err
 	}
@@ -86,12 +91,12 @@ func (s *Server) noteReplace(ctx context.Context, _ *sdk.CallToolRequest, in Not
 	// Forcing is safe to offer because every change is committed as it is
 	// made, so the prior text is one git revert away.
 	forced := false
-	if m := s.mutability(path); m != category.Replaceable {
+	if m := sc.mutability(path); m != category.Replaceable {
 		if !in.Force {
 			return nil, NoteReplaceOutput{}, fmt.Errorf(
 				"%s is %s: it records what was known at the time rather than describing the current "+
 					"state. Add to it with note_append, or pass force to rewrite it anyway "+
-					"when you are repairing a defect rather than revising the record", ref, m)
+					"when you are repairing a defect rather than revising the record", sc.qualify(ref), m)
 		}
 		forced = true
 	}
@@ -99,17 +104,17 @@ func (s *Server) noteReplace(ctx context.Context, _ *sdk.CallToolRequest, in Not
 	// Read before write, for the same reason the harness's own editing tools
 	// require it: a caller that has not seen the current text cannot judge
 	// whether a bounded edit removed the right thing.
-	if !s.hasRead(ref) {
+	if !sc.hasRead(ref) {
 		return nil, NoteReplaceOutput{}, fmt.Errorf(
-			"read %s with note_read before replacing part of it", ref)
+			"read %s with note_read before replacing part of it", sc.qualify(ref))
 	}
 
-	resolved := s.resolveLinks(nil, in.Content)
+	resolved := sc.resolveLinks(nil, in.Content)
 	if err := resolved.err(); err != nil {
 		return nil, NoteReplaceOutput{}, err
 	}
 
-	note, err := s.vault.Read(path)
+	note, err := sc.vault.Read(path)
 	if err != nil {
 		return nil, NoteReplaceOutput{}, err
 	}
@@ -122,17 +127,17 @@ func (s *Server) noteReplace(ctx context.Context, _ *sdk.CallToolRequest, in Not
 		// Anchors are matched against the text on disk, where links are
 		// paths, while a caller copying an anchor out of a tool result has
 		// them as refs.
-		removed, err = note.ReplaceBetween(s.toPaths(in.From), s.toPaths(in.To), resolved.Body, in.IncludeAnchors)
+		removed, err = note.ReplaceBetween(sc.toPaths(in.From), sc.toPaths(in.To), resolved.Body, in.IncludeAnchors)
 	default:
 		removed, err = note.ReplaceContent(resolved.Body)
 	}
 	if err != nil {
-		return nil, NoteReplaceOutput{}, fmt.Errorf("%s: %w", ref, err)
+		return nil, NoteReplaceOutput{}, fmt.Errorf("%s: %w", sc.qualify(ref), err)
 	}
 
 	note.Touch(schema.Today())
 
-	if err := s.write(note); err != nil {
+	if err := sc.write(note); err != nil {
 		return nil, NoteReplaceOutput{}, err
 	}
 
@@ -140,11 +145,11 @@ func (s *Server) noteReplace(ctx context.Context, _ *sdk.CallToolRequest, in Not
 	if forced {
 		message = "gandalf: note replace " + ref.String() + " (forced, append-only)"
 	}
-	warning := s.record(message, in.Reason)
+	warning := sc.record(message, in.Reason)
 
 	out := NoteReplaceOutput{
-		NoteOutput: s.ack(ref, note),
-		Removed:    s.toRefs(removed),
+		NoteOutput: sc.ack(ref, note),
+		Removed:    sc.toRefs(removed),
 		Forced:     forced,
 	}
 	out.GitWarning = warning
@@ -192,8 +197,8 @@ func replaceTarget(in NoteReplaceInput) (target, error) {
 // on them being editable. Anything else —
 // a note no category accounts for — is append-only, because losing a record
 // is worse than having to append to one.
-func (s *Server) mutability(notePath string) category.Mutability {
-	if cat, _, name, ok := s.vault.Categories().Owner(notePath); ok {
+func (c *Core) mutability(notePath string) category.Mutability {
+	if cat, _, name, ok := c.vault.Categories().Owner(notePath); ok {
 		facet := ""
 		if cat.Rule == category.RuleScoped {
 			facet = name
@@ -205,7 +210,7 @@ func (s *Server) mutability(notePath string) category.Mutability {
 		return category.Replaceable
 	}
 
-	for _, t := range s.vault.Topics().Topics {
+	for _, t := range c.vault.Topics().Topics {
 		if t.Path == notePath {
 			return category.Replaceable
 		}

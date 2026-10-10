@@ -32,47 +32,52 @@ type NoteDeleteOutput struct {
 // referrers come back in the error so the caller can fix them rather than
 // hunting for them.
 func (s *Server) noteDelete(ctx context.Context, _ *sdk.CallToolRequest, in NoteDeleteInput) (*sdk.CallToolResult, NoteDeleteOutput, error) {
-	unlock := s.beginWrite()
+	sc, rest, err := s.route(ctx, in.Ref)
+	if err != nil {
+		return nil, NoteDeleteOutput{}, err
+	}
+
+	unlock := sc.beginWrite()
 	defer unlock()
 
 	if err := checkReason(in.Reason); err != nil {
 		return nil, NoteDeleteOutput{}, err
 	}
 
-	ref, path, err := s.writable(in.Ref)
+	ref, path, err := sc.writable(rest)
 	if err != nil {
 		return nil, NoteDeleteOutput{}, err
 	}
-	if !s.vault.Exists(path) {
-		return nil, NoteDeleteOutput{}, fmt.Errorf("%s does not exist", ref)
+	if !sc.vault.Exists(path) {
+		return nil, NoteDeleteOutput{}, fmt.Errorf("%s does not exist", sc.qualify(ref))
 	}
 
-	referrers, err := s.vault.Referrers(path)
+	referrers, err := sc.vault.Referrers(path)
 	if err != nil {
 		return nil, NoteDeleteOutput{}, err
 	}
 	if len(referrers) > 0 {
 		refs := make([]string, 0, len(referrers))
 		for _, r := range referrers {
-			refs = append(refs, s.canonical(r).String())
+			refs = append(refs, sc.qualify(sc.canonical(r)))
 		}
 		return nil, NoteDeleteOutput{}, fmt.Errorf(
-			"%s is linked to by %s. Remove those links first, or keep the note — deleting it would leave dead links behind",
-			ref, strings.Join(refs, ", "))
+			"%s is linked to by %sc. Remove those links first, or keep the note — deleting it would leave dead links behind",
+			sc.qualify(ref), strings.Join(refs, ", "))
 	}
 
 	// Read the note before removing it: whatever it pointed at needs its
 	// backlinks trimmed, and afterwards there is nothing left to ask.
 	var outgoing []string
-	if note, err := s.vault.Read(path); err == nil {
+	if note, err := sc.vault.Read(path); err == nil {
 		outgoing = note.OutgoingLinks()
 	}
 
-	if err := s.vault.Delete(path); err != nil {
+	if err := sc.vault.Delete(path); err != nil {
 		return nil, NoteDeleteOutput{}, err
 	}
 
-	rebuilt, err := s.vault.ApplyBacklinks(path, outgoing, nil)
+	rebuilt, err := sc.vault.ApplyBacklinks(path, outgoing, nil)
 	if err != nil {
 		return nil, NoteDeleteOutput{}, err
 	}
@@ -80,28 +85,28 @@ func (s *Server) noteDelete(ctx context.Context, _ *sdk.CallToolRequest, in Note
 	// A vault-declared topic is named in the registry as well as on disk.
 	// Leaving the entry behind would have boot advertise a topic that reads
 	// as missing.
-	if t, ok := s.vault.Topics().ByPath(path); ok {
-		set := s.vault.Topics()
+	if t, ok := sc.vault.Topics().ByPath(path); ok {
+		set := sc.vault.Topics()
 		set.Remove(t.ID)
-		if err := s.vault.SetTopics(set); err != nil {
+		if err := sc.vault.SetTopics(set); err != nil {
 			return nil, NoteDeleteOutput{}, err
 		}
 	}
 
-	warning := s.record("gandalf: note delete "+ref.String(), in.Reason)
+	warning := sc.record("gandalf: note delete "+ref.String(), in.Reason)
 	return nil, NoteDeleteOutput{
-		Ref:       ref.String(),
+		Ref:       sc.qualify(ref),
 		Deleted:   true,
-		Rebuilt:   s.refsOf(rebuilt),
+		Rebuilt:   sc.refsOf(rebuilt),
 		GitNotice: GitNotice{GitWarning: warning},
 	}, nil
 }
 
 // refsOf renders note paths as refs.
-func (s *Server) refsOf(paths []string) []string {
+func (c *scoped) refsOf(paths []string) []string {
 	out := make([]string, 0, len(paths))
 	for _, p := range paths {
-		out = append(out, s.canonical(p).String())
+		out = append(out, c.qualify(c.canonical(p)))
 	}
 	return out
 }

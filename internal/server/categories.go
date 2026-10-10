@@ -37,8 +37,10 @@ type CategoryView struct {
 	Notes int `json:"notes"`
 }
 
-// CategoryListInput takes no arguments.
-type CategoryListInput struct{}
+// CategoryListInput says whose categories to list.
+type CategoryListInput struct {
+	Vault string `json:"vault,omitempty" jsonschema:"a team slug to list that team's categories; omit for your personal vault"`
+}
 
 // CategoryListOutput is the vault's declared categories.
 type CategoryListOutput struct {
@@ -46,14 +48,19 @@ type CategoryListOutput struct {
 }
 
 // categoryList reports what kinds of note this vault holds.
-func (s *Server) categoryList(ctx context.Context, _ *sdk.CallToolRequest, _ CategoryListInput) (*sdk.CallToolResult, CategoryListOutput, error) {
-	counts, err := s.categoryCounts()
+func (s *Server) categoryList(ctx context.Context, _ *sdk.CallToolRequest, in CategoryListInput) (*sdk.CallToolResult, CategoryListOutput, error) {
+	sc, err := s.vaultFor(ctx, in.Vault)
+	if err != nil {
+		return nil, CategoryListOutput{}, err
+	}
+
+	counts, err := sc.categoryCounts()
 	if err != nil {
 		return nil, CategoryListOutput{}, err
 	}
 
 	var out CategoryListOutput
-	for _, c := range s.vault.Categories().Categories {
+	for _, c := range sc.vault.Categories().Categories {
 		out.Categories = append(out.Categories, view(c, counts[c.Name]))
 	}
 
@@ -68,25 +75,25 @@ func (s *Server) categoryList(ctx context.Context, _ *sdk.CallToolRequest, _ Cat
 // caller could only find the difference by getting it wrong. Both work
 // everywhere now; the singular is tried first because that is the name a ref
 // carries.
-func (s *Server) categoryFor(kind string) (category.Category, bool) {
+func (c *Core) categoryFor(kind string) (category.Category, bool) {
 	kind = strings.TrimSpace(kind)
-	if cat, ok := s.vault.Categories().Lookup(kind); ok {
+	if cat, ok := c.vault.Categories().Lookup(kind); ok {
 		return cat, true
 	}
-	return s.vault.Categories().ByPlural(kind)
+	return c.vault.Categories().ByPlural(kind)
 }
 
 // canonicalKinds maps a search filter onto the names the index stores, which
 // are the singular ones. A value naming no category is passed through
 // unchanged, matching nothing, as it did before.
-func (s *Server) canonicalKinds(kinds []string) []string {
+func (c *Core) canonicalKinds(kinds []string) []string {
 	if len(kinds) == 0 {
 		return kinds
 	}
 
 	out := make([]string, 0, len(kinds))
 	for _, kind := range kinds {
-		if cat, ok := s.categoryFor(kind); ok {
+		if cat, ok := c.categoryFor(kind); ok {
 			out = append(out, cat.Name)
 			continue
 		}
@@ -113,6 +120,8 @@ type CategoryCreateInput struct {
 	Mutability string `json:"mutability,omitempty" jsonschema:"append-only for a chronological record such as a log, replaceable for a note describing current state; defaults to append-only"`
 
 	Reason string `json:"reason" jsonschema:"why the vault is changing shape this way, in a few words; it becomes the commit message"`
+
+	Vault string `json:"vault,omitempty" jsonschema:"a team slug to declare the category in that team's vault; omit for your personal vault"`
 }
 
 // CategoryChangeOutput reports the resulting category.
@@ -125,7 +134,12 @@ type CategoryChangeOutput struct {
 
 // categoryCreate declares a new category.
 func (s *Server) categoryCreate(ctx context.Context, _ *sdk.CallToolRequest, in CategoryCreateInput) (*sdk.CallToolResult, CategoryChangeOutput, error) {
-	unlock := s.beginWrite()
+	sc, err := s.vaultFor(ctx, in.Vault)
+	if err != nil {
+		return nil, CategoryChangeOutput{}, err
+	}
+
+	unlock := sc.beginWrite()
 	defer unlock()
 
 	if err := checkReason(in.Reason); err != nil {
@@ -154,15 +168,15 @@ func (s *Server) categoryCreate(ctx context.Context, _ *sdk.CallToolRequest, in 
 		})
 	}
 
-	set := s.vault.Categories()
+	set := sc.vault.Categories()
 	if err := set.Add(cat); err != nil {
 		return nil, CategoryChangeOutput{}, err
 	}
-	if err := s.vault.SetCategories(set); err != nil {
+	if err := sc.vault.SetCategories(set); err != nil {
 		return nil, CategoryChangeOutput{}, err
 	}
 
-	warning := s.record("gandalf: category create "+cat.Name, in.Reason)
+	warning := sc.record("gandalf: category create "+cat.Name, in.Reason)
 	return nil, CategoryChangeOutput{
 		Category:  view(cat, 0),
 		GitNotice: GitNotice{GitWarning: warning},
@@ -173,18 +187,25 @@ func (s *Server) categoryCreate(ctx context.Context, _ *sdk.CallToolRequest, in 
 type CategoryNameInput struct {
 	Name   string `json:"name" jsonschema:"the category's singular name, as category_list reports it"`
 	Reason string `json:"reason" jsonschema:"why the vault is changing shape this way, in a few words; it becomes the commit message"`
+
+	Vault string `json:"vault,omitempty" jsonschema:"a team slug to change that team's vault; omit for your personal vault"`
 }
 
 // categoryRetire hides a category from creation without orphaning its notes.
 func (s *Server) categoryRetire(ctx context.Context, _ *sdk.CallToolRequest, in CategoryNameInput) (*sdk.CallToolResult, CategoryChangeOutput, error) {
-	unlock := s.beginWrite()
+	sc, err := s.vaultFor(ctx, in.Vault)
+	if err != nil {
+		return nil, CategoryChangeOutput{}, err
+	}
+
+	unlock := sc.beginWrite()
 	defer unlock()
 
 	if err := checkReason(in.Reason); err != nil {
 		return nil, CategoryChangeOutput{}, err
 	}
 
-	set := s.vault.Categories()
+	set := sc.vault.Categories()
 
 	cat, ok := set.Lookup(in.Name)
 	if !ok {
@@ -198,16 +219,16 @@ func (s *Server) categoryRetire(ctx context.Context, _ *sdk.CallToolRequest, in 
 	if err := set.Replace(cat.Name, cat); err != nil {
 		return nil, CategoryChangeOutput{}, err
 	}
-	if err := s.vault.SetCategories(set); err != nil {
+	if err := sc.vault.SetCategories(set); err != nil {
 		return nil, CategoryChangeOutput{}, err
 	}
 
-	counts, err := s.categoryCounts()
+	counts, err := sc.categoryCounts()
 	if err != nil {
 		return nil, CategoryChangeOutput{}, err
 	}
 
-	warning := s.record("gandalf: category retire "+cat.Name, in.Reason)
+	warning := sc.record("gandalf: category retire "+cat.Name, in.Reason)
 	return nil, CategoryChangeOutput{
 		Category:  view(cat, counts[cat.Name]),
 		Note:      "no new notes can be filed here; the ones already filed stay addressable",
@@ -221,21 +242,26 @@ func (s *Server) categoryRetire(ctx context.Context, _ *sdk.CallToolRequest, in 
 // leave them addressable only by path — readable, unwritable, and absent from
 // every listing — which is a quiet way to lose a year of work.
 func (s *Server) categoryDelete(ctx context.Context, _ *sdk.CallToolRequest, in CategoryNameInput) (*sdk.CallToolResult, CategoryChangeOutput, error) {
-	unlock := s.beginWrite()
+	sc, err := s.vaultFor(ctx, in.Vault)
+	if err != nil {
+		return nil, CategoryChangeOutput{}, err
+	}
+
+	unlock := sc.beginWrite()
 	defer unlock()
 
 	if err := checkReason(in.Reason); err != nil {
 		return nil, CategoryChangeOutput{}, err
 	}
 
-	set := s.vault.Categories()
+	set := sc.vault.Categories()
 
 	cat, ok := set.Lookup(in.Name)
 	if !ok {
 		return nil, CategoryChangeOutput{}, fmt.Errorf("no category %q", in.Name)
 	}
 
-	counts, err := s.categoryCounts()
+	counts, err := sc.categoryCounts()
 	if err != nil {
 		return nil, CategoryChangeOutput{}, err
 	}
@@ -248,11 +274,11 @@ func (s *Server) categoryDelete(ctx context.Context, _ *sdk.CallToolRequest, in 
 	if err := set.Remove(cat.Name); err != nil {
 		return nil, CategoryChangeOutput{}, err
 	}
-	if err := s.vault.SetCategories(set); err != nil {
+	if err := sc.vault.SetCategories(set); err != nil {
 		return nil, CategoryChangeOutput{}, err
 	}
 
-	warning := s.record("gandalf: category delete "+cat.Name, in.Reason)
+	warning := sc.record("gandalf: category delete "+cat.Name, in.Reason)
 	return nil, CategoryChangeOutput{
 		Category:  view(cat, 0),
 		Note:      "deleted; the folder itself is left alone",
@@ -261,15 +287,15 @@ func (s *Server) categoryDelete(ctx context.Context, _ *sdk.CallToolRequest, in 
 }
 
 // categoryCounts returns how many notes each category holds.
-func (s *Server) categoryCounts() (map[string]int, error) {
-	paths, err := s.vault.List()
+func (c *Core) categoryCounts() (map[string]int, error) {
+	paths, err := c.vault.List()
 	if err != nil {
 		return nil, err
 	}
 
 	counts := map[string]int{}
 	for _, p := range paths {
-		counts[s.vault.RefFor(p).Kind]++
+		counts[c.vault.RefFor(p).Kind]++
 	}
 
 	return counts, nil

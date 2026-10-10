@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -31,6 +32,40 @@ type TopicSummary struct {
 	Ref   string `json:"ref"`
 	Title string `json:"title"`
 	When  string `json:"when"`
+}
+
+// StandardSummary is one standard a team vault holds.
+type StandardSummary struct {
+	Ref   string `json:"ref"`
+	Title string `json:"title"`
+}
+
+// TeamBoot is what a session needs to know on arrival about one team vault it
+// can reach: how the team asks to work, what it has written down, and whether
+// its notes can be searched yet.
+//
+// Everything is addressed with the team in the ref, so the caller can read any
+// of it without working out which vault it came from.
+type TeamBoot struct {
+	Slug string `json:"slug"`
+	Name string `json:"name"`
+
+	// Operating is the team's own operating document, when its vault has one.
+	// It is the team's counterpart of the personal contract and governs work
+	// on the team's projects; there is no shipped fallback, because a team
+	// that wrote nothing has no operating document to be reminded of.
+	Operating *Document `json:"operating,omitempty"`
+
+	Topics    []TopicSummary    `json:"topics,omitempty"`
+	Standards []StandardSummary `json:"standards,omitempty"`
+
+	// Search is the state of this team vault's search index.
+	Search IndexStatus `json:"search"`
+
+	// GitNotice is present when this team vault's own repository is broken or
+	// not syncing. Each vault has its own repository, so the personal vault's
+	// health says nothing about a team's and the reverse.
+	GitNotice
 }
 
 // OpenSession is a session note still marked in progress.
@@ -88,8 +123,13 @@ type BootOutput struct {
 
 	// Search says whether the search index is usable yet. Boot is where a
 	// session decides how it will find prior work, and that decision is wrong
-	// if it assumes a capability that is still warming up or absent.
+	// if it assumes a capability that is still warming up or absent. It
+	// describes the personal vault; each team carries its own.
 	Search IndexStatus `json:"search"`
+
+	// Teams are the team vaults this session can reach, listed only when there
+	// are any.
+	Teams []TeamBoot `json:"teams,omitempty"`
 }
 
 // boot returns the operating contract, the topics available on demand, and
@@ -103,16 +143,17 @@ func (s *Server) boot(ctx context.Context, _ *sdk.CallToolRequest, _ BootInput) 
 	// Boot is the first call of a session, which makes it the right moment to
 	// start indexing: the work happens while the model is reading the contract
 	// rather than when it first tries to search.
-	s.startIndexing(ctx)
+	sc := s.personal()
+	sc.startIndexing(ctx)
 
 	out := BootOutput{
-		Vault:   s.vault.Root(),
+		Vault:   sc.vault.Root(),
 		Version: instructions.Version,
-		Search:  s.indexStatus(),
+		Search:  sc.indexStatus(),
 		Addressing: "Notes are addressed by ref — what a note is, not where it lives — never by " +
 			"path. The ref forms this vault uses are below, generated from the categories it " +
 			"declares. Refs come from these tools; do not construct one from a filename.",
-		Categories:  s.addressing(),
+		Categories:  sc.addressing(),
 		Conventions: conventions,
 	}
 
@@ -121,13 +162,13 @@ func (s *Server) boot(ctx context.Context, _ *sdk.CallToolRequest, _ BootInput) 
 	// since when, and that changes are not being committed or synced: the
 	// vault keeps accepting writes while broken, which is the reason it has to
 	// be said.
-	if warning := s.gitWarning(); warning != "" {
+	if warning := sc.gitWarning(); warning != "" {
 		out.GitWarning = warning
 		out.Notices = append(out.Notices, "GIT IS NOT WORKING: "+warning)
 	}
 
 	for _, doc := range instructions.Core() {
-		content, source, err := s.document(doc)
+		content, source, err := sc.document(doc)
 		if err != nil {
 			return nil, BootOutput{}, err
 		}
@@ -143,13 +184,56 @@ func (s *Server) boot(ctx context.Context, _ *sdk.CallToolRequest, _ BootInput) 
 		})
 	}
 
-	out.Topics = s.topicSummaries()
+	out.Topics = sc.topicSummaries()
 
-	open, err := s.openSessions(schema.Today())
+	open, err := sc.openSessions(schema.Today())
 	if err != nil {
 		return nil, BootOutput{}, err
 	}
 	out.OpenToday = open
+
+	// Teams come after the personal vault's own state, and their open sessions
+	// join the same list with the team in the ref, so "continue the session
+	// that is already open" works the same wherever that session lives.
+	teams, err := s.reach.Teams(ctx)
+	if err != nil {
+		return nil, BootOutput{}, fmt.Errorf("list team vaults: %w", err)
+	}
+	for _, team := range teams {
+		tc, err := s.vaultFor(ctx, team.Slug)
+		if err != nil {
+			if errors.Is(err, ErrNoAccess) {
+				// Membership ended between the listing and the lookup.
+				continue
+			}
+			return nil, BootOutput{}, err
+		}
+
+		// A team's repository is examined whether or not the rest of its boot
+		// could be read: what a writer needs to hear is that its changes are
+		// not being kept, and that is true either way. The personal vault's
+		// report came first.
+		gitWarning := tc.gitWarning()
+		if gitWarning != "" {
+			out.Notices = append(out.Notices,
+				fmt.Sprintf("GIT IS NOT WORKING for team %s: %s", team.Slug, gitWarning))
+		}
+
+		boot, teamOpen, err := tc.bootTeam(ctx, team)
+		if err != nil {
+			out.Notices = append(out.Notices,
+				fmt.Sprintf("team %s could not be read and is left out: %v", team.Slug, err))
+			continue
+		}
+		boot.GitWarning = gitWarning
+		out.Teams = append(out.Teams, boot)
+		open = append(open, teamOpen...)
+	}
+	out.OpenToday = open
+
+	if len(out.Teams) > 0 {
+		out.Conventions = append(out.Conventions[:len(out.Conventions):len(out.Conventions)], teamConventions...)
+	}
 
 	if len(open) > 0 {
 		out.Notices = append(out.Notices,
@@ -174,12 +258,21 @@ var conventions = []string{
 	"Every change is committed, and past versions of a note can be read, compared, and restored. Nothing here rewrites history.",
 }
 
+// teamConventions are added to boot's conventions when the session can reach
+// any team vault. They are conditional because a rule about a feature the
+// session does not have is noise in every boot of a single-vault install.
+var teamConventions = []string{
+	"A note in a team's vault is addressed @<team>:<ref>, such as @platform:standard:testing; refs without the @team: prefix are your personal vault. Tools that take no ref take a vault parameter naming the team.",
+	"Links between vaults are refused, because Obsidian cannot resolve a link from one vault into another. Inside a team note, link by ref as usual (the @team: prefix is optional there); to point at a note in another vault, name it in prose.",
+	"A team's standards and operating document (listed under teams) govern work on that team's projects, alongside your own contract and standards.",
+}
+
 // addressing reports how each of the vault's categories is named and whether
 // its notes may be rewritten.
-func (s *Server) addressing() map[string]Addressing {
+func (c *Core) addressing() map[string]Addressing {
 	out := map[string]Addressing{}
 
-	for _, c := range s.vault.Categories().Categories {
+	for _, c := range c.vault.Categories().Categories {
 		view := view(c, 0)
 		out[c.Name] = Addressing{
 			RefForm:         view.RefForm,
@@ -204,9 +297,9 @@ func (s *Server) addressing() map[string]Addressing {
 }
 
 // document returns a shipped document's text, preferring the vault's copy.
-func (s *Server) document(doc instructions.Doc) (content, source string, err error) {
-	if s.vault.Exists(doc.Path) {
-		note, err := s.vault.Read(doc.Path)
+func (c *Core) document(doc instructions.Doc) (content, source string, err error) {
+	if c.vault.Exists(doc.Path) {
+		note, err := c.vault.Read(doc.Path)
 		if err != nil {
 			return "", "", fmt.Errorf("read %q: %w", doc.Path, err)
 		}
@@ -226,8 +319,8 @@ func (s *Server) document(doc instructions.Doc) (content, source string, err err
 //
 // This is what lets a model that lost its ref — to compaction, or a restarted
 // server — pick the session note back up instead of starting a second one.
-func (s *Server) openSessions(on schema.Date) ([]OpenSession, error) {
-	paths, err := s.vault.List()
+func (c *scoped) openSessions(on schema.Date) ([]OpenSession, error) {
+	paths, err := c.vault.List()
 	if err != nil {
 		return nil, err
 	}
@@ -236,22 +329,89 @@ func (s *Server) openSessions(on schema.Date) ([]OpenSession, error) {
 
 	var open []OpenSession
 	for _, p := range paths {
-		ref := s.vault.RefFor(p)
+		ref := c.vault.RefFor(p)
 		if ref.Kind != sessionCategory || !strings.HasPrefix(ref.Name, prefix) {
 			continue
 		}
 
-		note, err := s.vault.Read(p)
+		note, err := c.vault.Read(p)
 		if err != nil {
-			// A malformed note is lint's problem, not boot's.
+			// A malformed note is lint's problem, not boot'c.
 			continue
 		}
 		if note.FM.Status != schema.StatusInProgress {
 			continue
 		}
 
-		open = append(open, OpenSession{Ref: ref.String(), Title: note.Title()})
+		open = append(open, OpenSession{Ref: c.qualify(ref), Title: note.Title()})
 	}
 
 	return open, nil
+}
+
+// bootTeam reports one team vault: its operating document, its topics and
+// standards, its index state, and the sessions still open in it today.
+//
+// Indexing is started here, as it is for the personal vault, so the work
+// happens while the model reads the contract rather than on its first search.
+func (c *scoped) bootTeam(ctx context.Context, team TeamInfo) (TeamBoot, []OpenSession, error) {
+	c.startIndexing(ctx)
+
+	out := TeamBoot{Slug: c.slug, Name: team.Name}
+
+	operating := instructions.Contract()
+	if c.vault.Exists(operating.Path) {
+		note, err := c.vault.Read(operating.Path)
+		if err != nil {
+			return TeamBoot{}, nil, fmt.Errorf("read %q: %w", operating.Path, err)
+		}
+		out.Operating = &Document{
+			ID:      operating.ID,
+			Title:   operating.Title,
+			Content: c.toRefs(note.Content()),
+			Source:  "vault",
+		}
+	}
+
+	out.Topics = c.topicSummaries()
+
+	standards, err := c.standards()
+	if err != nil {
+		return TeamBoot{}, nil, err
+	}
+	out.Standards = standards
+	out.Search = c.indexStatus()
+
+	open, err := c.openSessions(schema.Today())
+	if err != nil {
+		return TeamBoot{}, nil, err
+	}
+	return out, open, nil
+}
+
+// standardCategory is the category engineering standards are filed under.
+const standardCategory = "standard"
+
+// standards lists the standards the vault holds, by ref and title.
+func (c *scoped) standards() ([]StandardSummary, error) {
+	paths, err := c.vault.List()
+	if err != nil {
+		return nil, err
+	}
+
+	var out []StandardSummary
+	for _, p := range paths {
+		ref := c.canonical(p)
+		if ref.Kind != standardCategory {
+			continue
+		}
+
+		note, err := c.vault.Read(p)
+		if err != nil {
+			// A malformed note is lint's problem, not boot's.
+			continue
+		}
+		out = append(out, StandardSummary{Ref: c.qualify(ref), Title: note.Title()})
+	}
+	return out, nil
 }
