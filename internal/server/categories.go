@@ -119,6 +119,8 @@ type CategoryCreateInput struct {
 type CategoryChangeOutput struct {
 	Category CategoryView `json:"category"`
 	Note     string       `json:"note,omitempty"`
+
+	GitNotice
 }
 
 // categoryCreate declares a new category.
@@ -160,8 +162,11 @@ func (s *Server) categoryCreate(ctx context.Context, _ *sdk.CallToolRequest, in 
 		return nil, CategoryChangeOutput{}, err
 	}
 
-	s.record("gandalf: category create "+cat.Name, in.Reason)
-	return nil, CategoryChangeOutput{Category: view(cat, 0)}, nil
+	warning := s.record("gandalf: category create "+cat.Name, in.Reason)
+	return nil, CategoryChangeOutput{
+		Category:  view(cat, 0),
+		GitNotice: GitNotice{GitWarning: warning},
+	}, nil
 }
 
 // CategoryNameInput names an existing category.
@@ -202,10 +207,11 @@ func (s *Server) categoryRetire(ctx context.Context, _ *sdk.CallToolRequest, in 
 		return nil, CategoryChangeOutput{}, err
 	}
 
-	s.record("gandalf: category retire "+cat.Name, in.Reason)
+	warning := s.record("gandalf: category retire "+cat.Name, in.Reason)
 	return nil, CategoryChangeOutput{
-		Category: view(cat, counts[cat.Name]),
-		Note:     "no new notes can be filed here; the ones already filed stay addressable",
+		Category:  view(cat, counts[cat.Name]),
+		Note:      "no new notes can be filed here; the ones already filed stay addressable",
+		GitNotice: GitNotice{GitWarning: warning},
 	}, nil
 }
 
@@ -246,10 +252,11 @@ func (s *Server) categoryDelete(ctx context.Context, _ *sdk.CallToolRequest, in 
 		return nil, CategoryChangeOutput{}, err
 	}
 
-	s.record("gandalf: category delete "+cat.Name, in.Reason)
+	warning := s.record("gandalf: category delete "+cat.Name, in.Reason)
 	return nil, CategoryChangeOutput{
-		Category: view(cat, 0),
-		Note:     "deleted; the folder itself is left alone",
+		Category:  view(cat, 0),
+		Note:      "deleted; the folder itself is left alone",
+		GitNotice: GitNotice{GitWarning: warning},
 	}, nil
 }
 

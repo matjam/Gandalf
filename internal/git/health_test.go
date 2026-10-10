@@ -3,10 +3,13 @@ package git
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 // committedRepo is a repository with a note committed on top of the initial
@@ -644,4 +647,60 @@ func TestEnsurePinsDurability(t *testing.T) {
 		}
 		check(t, repo)
 	})
+}
+
+// errorCounter is a slog handler that counts the error-level records with one
+// message.
+type errorCounter struct {
+	message string
+
+	mu sync.Mutex
+	n  int
+}
+
+func (c *errorCounter) Enabled(context.Context, slog.Level) bool { return true }
+func (c *errorCounter) WithAttrs([]slog.Attr) slog.Handler       { return c }
+func (c *errorCounter) WithGroup(string) slog.Handler            { return c }
+
+func (c *errorCounter) Handle(_ context.Context, r slog.Record) error {
+	if r.Level >= slog.LevelError && r.Message == c.message {
+		c.mu.Lock()
+		c.n++
+		c.mu.Unlock()
+	}
+	return nil
+}
+
+func (c *errorCounter) count() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.n
+}
+
+// TestSyncLoopLogsEveryFailedAttempt: the loop that stopped saying anything
+// after its first failure is how a month went by. While the repository is
+// broken, every tick is an error line.
+func TestSyncLoopLogsEveryFailedAttempt(t *testing.T) {
+	repo := committedRepo(t)
+	if err := SaveConfig(repo.root, Config{SyncInterval: "20ms"}); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+	emptyObject(t, repo, resolve(t, repo, "HEAD"))
+
+	counter := &errorCounter{message: "gandalf: git sync"}
+	previous := slog.Default()
+	slog.SetDefault(slog.New(counter))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	repo.StartSync(ctx, Unguarded)
+
+	deadline := time.Now().Add(10 * time.Second)
+	for counter.count() < 3 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if got := counter.count(); got < 3 {
+		t.Errorf("logged %d failed attempts, want one per tick (at least 3)", got)
+	}
 }

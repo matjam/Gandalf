@@ -425,15 +425,17 @@ func (s *Server) noteRestore(ctx context.Context, _ *sdk.CallToolRequest, in Not
 	if forced {
 		message += " (forced, append-only)"
 	}
-	s.record(message, in.Reason)
+	warning := s.record(message, in.Reason)
 
-	return nil, NoteRestoreOutput{
+	out := NoteRestoreOutput{
 		NoteOutput:   s.describe(ref, note),
 		RestoredFrom: commit,
 		Recreated:    recreated,
 		DeadLinks:    s.refsFor(dead),
 		Forced:       forced,
-	}, nil
+	}
+	out.GitWarning = warning
+	return nil, out, nil
 }
 
 // repo returns the vault's git repository, or the reason there is no history

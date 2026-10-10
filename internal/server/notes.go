@@ -37,6 +37,8 @@ type NoteOutput struct {
 	// Source is set to "shipped" when the text came from the binary because
 	// the vault has no copy, and is otherwise omitted.
 	Source string `json:"source,omitempty"`
+
+	GitNotice
 }
 
 // noteRead returns one note, whether it is something the vault holds or one of
@@ -104,6 +106,8 @@ type SessionStartOutput struct {
 	Ref     string `json:"ref"`
 	Created bool   `json:"created"`
 	Note    string `json:"note,omitempty"`
+
+	GitNotice
 }
 
 // sessionStart creates the session note for this unit of work.
@@ -149,8 +153,12 @@ func (s *Server) sessionStart(ctx context.Context, _ *sdk.CallToolRequest, in Se
 		return nil, SessionStartOutput{}, err
 	}
 
-	s.record("gandalf: session start "+ref.String(), in.Reason)
-	return nil, SessionStartOutput{Ref: ref.String(), Created: true}, nil
+	warning := s.record("gandalf: session start "+ref.String(), in.Reason)
+	return nil, SessionStartOutput{
+		Ref:       ref.String(),
+		Created:   true,
+		GitNotice: GitNotice{GitWarning: warning},
+	}, nil
 }
 
 // NoteNewInput describes a note to create.
@@ -225,11 +233,13 @@ func (s *Server) noteNew(ctx context.Context, _ *sdk.CallToolRequest, in NoteNew
 	}
 
 	ref := s.canonical(note.Path)
-	s.record("gandalf: note new "+ref.String(), in.Reason)
+	warning := s.record("gandalf: note new "+ref.String(), in.Reason)
 
 	// The caller wrote the whole body, so it has seen the note's text.
 	s.markRead(ref)
-	return nil, s.ack(ref, note), nil
+	out := s.ack(ref, note)
+	out.GitWarning = warning
+	return nil, out, nil
 }
 
 // NoteAppendInput describes content to add to a note.
@@ -274,8 +284,10 @@ func (s *Server) noteAppend(ctx context.Context, _ *sdk.CallToolRequest, in Note
 		return nil, NoteOutput{}, err
 	}
 
-	s.record("gandalf: note append "+ref.String(), in.Reason)
-	return nil, s.ack(ref, note), nil
+	warning := s.record("gandalf: note append "+ref.String(), in.Reason)
+	out := s.ack(ref, note)
+	out.GitWarning = warning
+	return nil, out, nil
 }
 
 // or has stopped linking to.
@@ -357,8 +369,10 @@ func (s *Server) noteUpdate(ctx context.Context, _ *sdk.CallToolRequest, in Note
 		return nil, NoteOutput{}, err
 	}
 
-	s.record("gandalf: note update "+ref.String(), in.Reason)
-	return nil, s.ack(ref, note), nil
+	warning := s.record("gandalf: note update "+ref.String(), in.Reason)
+	out := s.ack(ref, note)
+	out.GitWarning = warning
+	return nil, out, nil
 }
 
 // describe renders a note for a tool result, translating the links stored on

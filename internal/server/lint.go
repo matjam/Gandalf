@@ -95,6 +95,8 @@ const CorrectionsSection = "Recorded Corrections"
 type CorrectOutput struct {
 	Ref     string `json:"ref"`
 	History string `json:"history_ref,omitempty"`
+
+	GitNotice
 }
 
 // correct writes a correction into the one document that owns that kind of
@@ -153,7 +155,7 @@ func (s *Server) correct(ctx context.Context, _ *sdk.CallToolRequest, in Correct
 	// The guidance is the reason: a correction's why is the rule it records,
 	// and CorrectInput's own Reason is what prompted it, which belongs in the
 	// history rather than in the commit.
-	s.record("gandalf: correct "+ref.String(), in.Guidance)
+	out.GitWarning = s.record("gandalf: correct "+ref.String(), in.Guidance)
 	return nil, out, nil
 }
 

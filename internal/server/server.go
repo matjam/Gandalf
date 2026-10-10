@@ -10,7 +10,6 @@ package server
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"strings"
 	"sync"
 
@@ -183,24 +182,6 @@ func (s *Server) Session() *Server {
 func (c *Core) beginWrite() func() {
 	c.write.Lock()
 	return c.write.Unlock
-}
-
-// record commits the vault after a successful mutation. A commit failure is
-// logged and never returned: the note already landed, and a missing commit is
-// recoverable on the next change.
-//
-// The message is generated and says which tool changed which note; the reason
-// is the caller's and says why. Both are needed to make the history readable:
-// the message alone gives a log of mechanical operations, and the reason alone
-// loses the distinction between an append and a replacement, which is the
-// distinction between adding to a note and overwriting part of it.
-func (s *Server) record(message, reason string) {
-	if s.git == nil {
-		return
-	}
-	if err := s.git.Commit(message, reason); err != nil {
-		slog.Error("gandalf: git commit", "message", message, "error", err)
-	}
 }
 
 // checkReason refuses a change that does not say why it is being made.

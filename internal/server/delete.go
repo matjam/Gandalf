@@ -21,6 +21,8 @@ type NoteDeleteOutput struct {
 
 	// Rebuilt lists notes whose backlinks changed as a result.
 	Rebuilt []string `json:"backlinks_updated,omitempty"`
+
+	GitNotice
 }
 
 // noteDelete removes a note, provided nothing points at it.
@@ -86,11 +88,12 @@ func (s *Server) noteDelete(ctx context.Context, _ *sdk.CallToolRequest, in Note
 		}
 	}
 
-	s.record("gandalf: note delete "+ref.String(), in.Reason)
+	warning := s.record("gandalf: note delete "+ref.String(), in.Reason)
 	return nil, NoteDeleteOutput{
-		Ref:     ref.String(),
-		Deleted: true,
-		Rebuilt: s.refsOf(rebuilt),
+		Ref:       ref.String(),
+		Deleted:   true,
+		Rebuilt:   s.refsOf(rebuilt),
+		GitNotice: GitNotice{GitWarning: warning},
 	}, nil
 }
 

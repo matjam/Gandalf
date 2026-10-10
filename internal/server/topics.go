@@ -82,6 +82,8 @@ type TopicNewInput struct {
 type TopicNewOutput struct {
 	Topic TopicSummary `json:"topic"`
 	Note  NoteOutput   `json:"note"`
+
+	GitNotice
 }
 
 // topicNew declares a topic and writes the note that holds it.
@@ -174,11 +176,12 @@ func (s *Server) topicNew(ctx context.Context, _ *sdk.CallToolRequest, in TopicN
 	}
 
 	ref := s.canonical(note.Path)
-	s.record("gandalf: topic new "+ref.String(), in.Reason)
+	warning := s.record("gandalf: topic new "+ref.String(), in.Reason)
 
 	return nil, TopicNewOutput{
-		Topic: TopicSummary{Ref: ref.String(), Title: entry.Title, When: entry.When},
-		Note:  s.ack(ref, note),
+		Topic:     TopicSummary{Ref: ref.String(), Title: entry.Title, When: entry.When},
+		Note:      s.ack(ref, note),
+		GitNotice: GitNotice{GitWarning: warning},
 	}, nil
 }
 

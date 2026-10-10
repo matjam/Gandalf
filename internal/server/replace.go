@@ -140,13 +140,15 @@ func (s *Server) noteReplace(ctx context.Context, _ *sdk.CallToolRequest, in Not
 	if forced {
 		message = "gandalf: note replace " + ref.String() + " (forced, append-only)"
 	}
-	s.record(message, in.Reason)
+	warning := s.record(message, in.Reason)
 
-	return nil, NoteReplaceOutput{
+	out := NoteReplaceOutput{
 		NoteOutput: s.ack(ref, note),
 		Removed:    s.toRefs(removed),
 		Forced:     forced,
-	}, nil
+	}
+	out.GitWarning = warning
+	return nil, out, nil
 }
 
 // replaceTarget works out which part of the note a request addresses, and

@@ -64,6 +64,11 @@ type Addressing struct {
 
 // BootOutput is the session's starting context.
 type BootOutput struct {
+	// GitNotice comes first so that it is the first thing in the result. A
+	// session that starts without hearing the vault is not being backed up
+	// goes on to write notes it believes are safe.
+	GitNotice
+
 	Vault      string         `json:"vault"`
 	Version    int            `json:"gandalfos_version"`
 	Contract   []Document     `json:"contract"`
@@ -109,6 +114,16 @@ func (s *Server) boot(ctx context.Context, _ *sdk.CallToolRequest, _ BootInput) 
 			"declares. Refs come from these tools; do not construct one from a filename.",
 		Categories:  s.addressing(),
 		Conventions: conventions,
+	}
+
+	// Git's health is reported before anything else, and in the notices too,
+	// where a session looks for things it should act on. It says what failed,
+	// since when, and that changes are not being committed or synced: the
+	// vault keeps accepting writes while broken, which is the reason it has to
+	// be said.
+	if warning := s.gitWarning(); warning != "" {
+		out.GitWarning = warning
+		out.Notices = append(out.Notices, "GIT IS NOT WORKING: "+warning)
 	}
 
 	for _, doc := range instructions.Core() {
