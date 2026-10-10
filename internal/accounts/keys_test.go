@@ -144,6 +144,29 @@ func TestAuthenticate(t *testing.T) {
 	}
 }
 
+func TestAuthenticateRefusesErasedOwnerEvenWithLiveKey(t *testing.T) {
+	// Erasure revokes keys, but Authenticate must not rely on that: a user
+	// marked deleted is refused on its own account, for both Authenticate and
+	// the per-call acting-user check.
+	e := newEnv(t)
+	ctx := context.Background()
+	u, k, err := e.s.CreateUser(ctx, e.adminP, "ghost", "")
+	wantErr(t, err, nil)
+	p := e.auth(k.Plaintext)
+	if _, err := e.s.db.Exec(`UPDATE users SET deleted = 1 WHERE id = ?`, u.ID); err != nil {
+		t.Fatal(err)
+	}
+	if n := e.rawCount(`SELECT COUNT(*) FROM keys WHERE user_id = ? AND revoked IS NULL`, u.ID); n != 1 {
+		t.Fatalf("test setup: want one live key, have %d", n)
+	}
+	if _, err := e.s.Authenticate(ctx, k.Plaintext); !isInvalidKey(err) {
+		t.Errorf("Authenticate = %v, want ErrInvalidKey", err)
+	}
+	if _, err := e.s.ListKeys(ctx, p, u.ID); !isForbidden(err) {
+		t.Errorf("acting as erased user = %v, want ErrForbidden", err)
+	}
+}
+
 func TestAuthenticateExpiryBoundary(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
@@ -216,11 +239,15 @@ func TestListKeys(t *testing.T) {
 	if len(keys) != 2 {
 		t.Fatalf("got %d keys, want 2", len(keys))
 	}
-	if keys[0].Label != "initial" || !keys[0].Active(e.clock.now()) {
-		t.Errorf("first key = %+v", keys[0])
+	byLabel := map[string]Key{}
+	for _, k := range keys {
+		byLabel[k.Label] = k
 	}
-	if keys[1].Label != "laptop" || keys[1].Revoked.IsZero() || keys[1].Active(e.clock.now()) {
-		t.Errorf("revoked key = %+v", keys[1])
+	if k := byLabel["initial"]; !k.Active(e.clock.now()) {
+		t.Errorf("initial key = %+v", k)
+	}
+	if k := byLabel["laptop"]; k.Revoked.IsZero() || k.Active(e.clock.now()) {
+		t.Errorf("revoked key = %+v", k)
 	}
 
 	// The listing type has no field that could carry a hash or plaintext.

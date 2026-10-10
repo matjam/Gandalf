@@ -77,6 +77,7 @@ func TestBootstrapIsAtomic(t *testing.T) {
 	}{
 		{"bad handle", "Bad Handle", "", "ops", "Ops", true, ErrInvalidHandle},
 		{"bad slug", "boss", "", "Bad Slug", "Ops", true, ErrInvalidSlug},
+		{"reserved slug", "boss", "", "personal", "Ops", true, ErrInvalidSlug},
 		{"bad team name", "boss", "", "ops", "", true, ErrInvalidArgument},
 		{"bad email", "boss", "not-an-email", "ops", "Ops", true, ErrInvalidArgument},
 		{"email without secret key", "boss", "boss@example.com", "ops", "Ops", false, ErrNoSecretKey},

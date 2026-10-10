@@ -64,6 +64,8 @@ func TestValidateSlug(t *testing.T) {
 		{"dotdot", "..", false},
 		// Unlike handles, slugs may start with the erased prefix.
 		{"erased prefix", "deleted-team", true},
+		{"reserved: personal", "personal", false},
+		{"personal as a prefix is fine", "personal-ops", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -89,6 +91,12 @@ func TestHandleAndSlugEnforcedByStore(t *testing.T) {
 	}
 	if _, err := e.s.CreateTeam(ctx, e.adminP, "Bad Slug", "x"); !errors.Is(err, ErrInvalidSlug) {
 		t.Errorf("CreateTeam bad slug: %v", err)
+	}
+	if _, err := e.s.CreateTeam(ctx, e.adminP, "personal", "Personal"); !errors.Is(err, ErrInvalidSlug) {
+		t.Errorf("CreateTeam reserved slug: %v", err)
+	}
+	if n := e.rawCount(`SELECT COUNT(*) FROM teams WHERE slug = 'personal'`); n != 0 {
+		t.Errorf("reserved slug was stored")
 	}
 	if _, err := e.s.CreateTeam(ctx, e.adminP, "ops", "again"); !errors.Is(err, ErrSlugTaken) {
 		t.Errorf("CreateTeam duplicate slug: %v", err)

@@ -43,12 +43,19 @@ type env struct {
 // newEnv opens a store with the secret key configured and bootstraps it.
 func newEnv(t *testing.T) *env { return newEnvOpts(t, WithSecretKey(testKey(1))) }
 
+// fastSync skips fsync: tests build many databases and never need them to
+// survive a power cut.
+func fastSync(s *Store) error {
+	s.pragmas = append(s.pragmas, "synchronous(OFF)")
+	return nil
+}
+
 func newEnvOpts(t *testing.T, opts ...Option) *env {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "data", "gandalf.db")
 	c := &clock{t: time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)}
 
-	s, err := Open(context.Background(), path, opts...)
+	s, err := Open(context.Background(), path, append(opts, fastSync)...)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -68,7 +75,7 @@ func newEnvOpts(t *testing.T, opts ...Option) *env {
 func newBareEnv(t *testing.T, opts ...Option) (*Store, *clock) {
 	t.Helper()
 	c := &clock{t: time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)}
-	s, err := Open(context.Background(), filepath.Join(t.TempDir(), "gandalf.db"), opts...)
+	s, err := Open(context.Background(), filepath.Join(t.TempDir(), "gandalf.db"), append(opts, fastSync)...)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -200,6 +207,7 @@ func wantErr(t *testing.T, err, target error) {
 
 func readFile(path string) ([]byte, error) { return os.ReadFile(path) }
 
-func isInvalidKey(err error) bool { return errors.Is(err, ErrInvalidKey) }
-func isForbidden(err error) bool  { return errors.Is(err, ErrForbidden) }
-func isNotFound(err error) bool   { return errors.Is(err, ErrNotFound) }
+func isInvalidKey(err error) bool  { return errors.Is(err, ErrInvalidKey) }
+func isForbidden(err error) bool   { return errors.Is(err, ErrForbidden) }
+func isNotFound(err error) bool    { return errors.Is(err, ErrNotFound) }
+func isErr(err, target error) bool { return errors.Is(err, target) }
