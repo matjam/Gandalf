@@ -204,19 +204,23 @@ func TestOpenTightensAnExistingDatabaseFile(t *testing.T) {
 func TestOpenCreatesPrivateFileAndPersists(t *testing.T) {
 	e := newEnv(t)
 
-	info, err := os.Stat(e.path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if perm := info.Mode().Perm(); perm != 0o600 {
-		t.Errorf("database mode = %o, want 600", perm)
-	}
-	dir, err := os.Stat(filepath.Dir(e.path))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if perm := dir.Mode().Perm(); perm != 0o700 {
-		t.Errorf("directory mode = %o, want 700", perm)
+	// Windows has no POSIX mode bits to assert: access there is the ACL the
+	// parent directory hands down.
+	if runtime.GOOS != "windows" {
+		info, err := os.Stat(e.path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if perm := info.Mode().Perm(); perm != 0o600 {
+			t.Errorf("database mode = %o, want 600", perm)
+		}
+		dir, err := os.Stat(filepath.Dir(e.path))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if perm := dir.Mode().Perm(); perm != 0o700 {
+			t.Errorf("directory mode = %o, want 700", perm)
+		}
 	}
 
 	// Reopening keeps the data and does not re-run migrations destructively.
@@ -251,7 +255,13 @@ func TestOpenRefusesNewerSchema(t *testing.T) {
 }
 
 func TestOpenPathWithURICharacters(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "a?b#c%d")
+	// '?' is not a legal character in a Windows file name; the others are what
+	// would break a file: URI, and the fragment and escape are enough there.
+	name := "a?b#c%d"
+	if runtime.GOOS == "windows" {
+		name = "a#b%25c"
+	}
+	dir := filepath.Join(t.TempDir(), name)
 	s, err := Open(context.Background(), filepath.Join(dir, "gandalf.db"))
 	if err != nil {
 		t.Fatalf("Open: %v", err)
