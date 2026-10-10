@@ -1103,12 +1103,15 @@ func TestGitRemotePolicyAndMechanism(t *testing.T) {
 		}
 	})
 
-	t.Run("no policy allows it", func(t *testing.T) {
+	t.Run("no policy allows the personal vault only", func(t *testing.T) {
 		m := newMulti(t, multiOptions{})
 		var out GitRemoteOutput
-		m.call("git_remote", GitRemoteInput{Vault: "platform"}, &out)
+		m.call("git_remote", GitRemoteInput{}, &out)
 		if out.Note == "" {
 			t.Errorf("out = %+v", out)
+		}
+		if msg := m.callErr("git_remote", GitRemoteInput{Vault: "platform"}); !strings.Contains(msg, "not permitted") {
+			t.Errorf("message = %s", msg)
 		}
 	})
 
@@ -1120,6 +1123,7 @@ func TestGitRemotePolicyAndMechanism(t *testing.T) {
 		var calls []call
 
 		m := newMulti(t, multiOptions{configure: func(s *Server) {
+			s.GitRemotePolicy = permitAll
 			s.SetRemote = func(_ context.Context, c *Core, scope, url string) (GitRemoteOutput, error) {
 				calls = append(calls, call{scope: scope, url: url, core: c})
 				return GitRemoteOutput{Remote: "deploy-key", URL: url}, nil

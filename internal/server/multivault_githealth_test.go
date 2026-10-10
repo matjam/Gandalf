@@ -57,7 +57,7 @@ func TestTeamWritesWarnWhenTheTeamRepositoryIsBroken(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.tool, func(t *testing.T) {
-			m := newMulti(t, multiOptions{})
+			m := newMulti(t, multiOptions{configure: func(s *Server) { s.CorrectPolicy = permitAll }})
 			args := tt.setup(m)
 
 			breakGitAt(t, m.platform.vault.Root())

@@ -374,7 +374,7 @@ func (s *Server) noteRestore(ctx context.Context, _ *sdk.CallToolRequest, in Not
 	if m := sc.mutability(notePath); m != category.Replaceable {
 		if !in.Force {
 			return nil, NoteRestoreOutput{}, fmt.Errorf(
-				"%s is %s: restoring it would discard everything added since %sc. Pass force if that is "+
+				"%s is %s: restoring it would discard everything added since %s. Pass force if that is "+
 					"what you mean, or read the version with note_version and add what is missing instead",
 				sc.qualify(ref), m, commit)
 		}

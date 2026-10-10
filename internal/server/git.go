@@ -43,10 +43,8 @@ func (s *Server) gitRemote(ctx context.Context, _ *sdk.CallToolRequest, in GitRe
 		return nil, GitRemoteOutput{}, err
 	}
 
-	if s.GitRemotePolicy != nil {
-		if err := s.GitRemotePolicy(ctx, sc.slug); err != nil {
-			return nil, GitRemoteOutput{}, fmt.Errorf("git_remote is not permitted: %w", err)
-		}
+	if err := s.permit(ctx, s.GitRemotePolicy, sc.slug); err != nil {
+		return nil, GitRemoteOutput{}, fmt.Errorf("git_remote is not permitted: %w", err)
 	}
 
 	set := s.SetRemote

@@ -197,7 +197,7 @@ func (c *scoped) summaries(kind *string, project string) ([]Summary, error) {
 
 		note, err := c.vault.Read(path)
 		if err != nil {
-			// A note too broken to parse is lint's business, not this tool'c.
+			// A note too broken to parse is lint's business, not this tool's.
 			continue
 		}
 

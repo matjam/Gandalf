@@ -62,7 +62,7 @@ func (s *Server) noteDelete(ctx context.Context, _ *sdk.CallToolRequest, in Note
 			refs = append(refs, sc.qualify(sc.canonical(r)))
 		}
 		return nil, NoteDeleteOutput{}, fmt.Errorf(
-			"%s is linked to by %sc. Remove those links first, or keep the note — deleting it would leave dead links behind",
+			"%s is linked to by %s. Remove those links first, or keep the note — deleting it would leave dead links behind",
 			sc.qualify(ref), strings.Join(refs, ", "))
 	}
 

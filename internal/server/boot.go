@@ -336,7 +336,7 @@ func (c *scoped) openSessions(on schema.Date) ([]OpenSession, error) {
 
 		note, err := c.vault.Read(p)
 		if err != nil {
-			// A malformed note is lint's problem, not boot'c.
+			// A malformed note is lint's problem, not boot's.
 			continue
 		}
 		if note.FM.Status != schema.StatusInProgress {

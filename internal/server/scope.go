@@ -73,10 +73,28 @@ func (p personalOnly) Teams(context.Context) ([]TeamInfo, error) { return nil, n
 // ScopePolicy decides whether a session may do something to a vault.
 //
 // scope is the team slug the action is aimed at, or "" for the session's
-// personal vault. A nil policy allows everything, which is what single-vault
-// mode wants; hosted mode installs one to turn the action into a role check.
-// A non-nil error refuses the action, and its text is what the caller reads.
+// personal vault. A nil policy allows the personal vault, which is the caller's
+// own, and refuses every team: a team's vault is shared, so acting on it needs
+// someone to have said who may, and a process that serves teams without having
+// installed a policy fails closed rather than open. Single-vault mode has no
+// teams, so the difference never shows there. Hosted mode installs a policy
+// that turns the action into a role check. A non-nil error refuses the action,
+// and its text is what the caller reads.
 type ScopePolicy func(ctx context.Context, scope string) error
+
+// errNoPolicy is the refusal for a team action when no policy was installed.
+var errNoPolicy = errors.New("no policy allows this on a team vault")
+
+// permit asks policy whether the session may act on the vault scope names.
+func (s *Server) permit(ctx context.Context, policy ScopePolicy, scope string) error {
+	if policy != nil {
+		return policy(ctx, scope)
+	}
+	if scope != "" {
+		return errNoPolicy
+	}
+	return nil
+}
 
 // scoped is one vault as one session sees it: the shared Core, the session
 // whose reading and authorship apply, and the name the vault goes by in refs.
@@ -150,6 +168,14 @@ func (s *Server) vaultFor(ctx context.Context, slug string) (*scoped, error) {
 	slug = cleanVaultParam(slug)
 	if slug == "" || slug == personalName {
 		return s.personal(), nil
+	}
+
+	// Only something shaped like a slug is passed on. Whether it names a team
+	// is the Reach's business, but it is handed a lookup key and not whatever a
+	// caller typed, so an implementation that builds a path or a query from the
+	// slug cannot be given "../x". The refusal is the one any unknown team gets.
+	if !slugPattern.MatchString(slug) {
+		return nil, &notMemberError{slug: slug}
 	}
 
 	core, err := s.reach.Team(ctx, slug)

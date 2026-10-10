@@ -137,8 +137,8 @@ func (s *Server) correct(ctx context.Context, _ *sdk.CallToolRequest, in Correct
 		rest = "topic:operating"
 	}
 
-	if sc.slug != "" && s.CorrectPolicy != nil {
-		if err := s.CorrectPolicy(ctx, sc.slug); err != nil {
+	if sc.slug != "" {
+		if err := s.permit(ctx, s.CorrectPolicy, sc.slug); err != nil {
 			return nil, CorrectOutput{}, fmt.Errorf(
 				"recording a correction in team %s is not permitted: %w", sc.slug, err)
 		}
@@ -162,7 +162,7 @@ func (s *Server) correct(ctx context.Context, _ *sdk.CallToolRequest, in Correct
 		section = CorrectionsSection
 	}
 	if err := note.AppendToSection(section, fmt.Sprintf("- %s", in.Guidance)); err != nil {
-		return nil, CorrectOutput{}, fmt.Errorf("record correction in %s: %w", ref, err)
+		return nil, CorrectOutput{}, fmt.Errorf("record correction in %s: %w", sc.qualify(ref), err)
 	}
 	note.Touch(schema.Today())
 

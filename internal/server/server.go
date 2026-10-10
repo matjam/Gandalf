@@ -84,15 +84,16 @@ type Server struct {
 	// keeps the repository's own identity.
 	author *git.Author
 
-	// GitRemotePolicy, when set, decides whether this session may change a
-	// vault's git remote. Nil allows it, which is what a process serving one
-	// vault to its owner wants; hosted mode sets it to a role check.
+	// GitRemotePolicy decides whether this session may change a vault's git
+	// remote. Nil allows the personal vault, which is what a process serving
+	// one vault to its owner wants, and refuses every team's; hosted mode sets
+	// it to a role check.
 	GitRemotePolicy ScopePolicy
 
-	// CorrectPolicy, when set, decides whether this session may record a
-	// correction in a team's vault. It is consulted only for team-scoped
-	// targets: a correction aimed at the personal vault is the caller's own
-	// business. Nil allows it.
+	// CorrectPolicy decides whether this session may record a correction in a
+	// team's vault. It is consulted only for team-scoped targets: a correction
+	// aimed at the personal vault is the caller's own business. Nil refuses
+	// every team, so a process that serves teams must install one.
 	CorrectPolicy ScopePolicy
 
 	// SetRemote is how git_remote changes a vault's remote. Nil uses the
