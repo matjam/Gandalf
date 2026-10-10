@@ -24,6 +24,10 @@ type Store struct {
 	aead cipher.AEAD // nil when no secret key is configured
 	log  *slog.Logger
 	now  func() time.Time
+
+	// pragmas are extra connection settings appended to the DSN. Empty in
+	// production; tests use it to trade durability for speed.
+	pragmas []string
 }
 
 // Option configures Open.
@@ -97,6 +101,9 @@ func Open(ctx context.Context, path string, opts ...Option) (*Store, error) {
 		"&_pragma=journal_mode(WAL)" +
 		"&_pragma=busy_timeout(5000)" +
 		"&_pragma=foreign_keys(1)"
+	for _, p := range s.pragmas {
+		dsn += "&_pragma=" + p
+	}
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open accounts database: %w", err)

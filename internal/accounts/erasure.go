@@ -46,7 +46,8 @@ type ErasurePlan struct {
 	PersonalVaultID string
 }
 
-// DeleteUser erases a user: revokes all their keys, discards their email and
+// DeleteUser erases a user: revokes all their keys (and blanks their
+// labels), discards their email and
 // git remote, replaces the handle with "deleted-<id suffix>", removes their
 // memberships, clears any global-admin flag and stamps the account deleted.
 // The row itself stays (anonymised) so ids referenced elsewhere, such as a
@@ -106,7 +107,10 @@ func (s *Store) DeleteUser(ctx context.Context, actor Principal, id string, dryR
 			sql  string
 			args []any
 		}{
-			{`UPDATE keys SET revoked = ? WHERE user_id = ? AND revoked IS NULL`, []any{now, id}},
+			// Labels are free text a person typed (Personal), so they go
+			// with the person; the key rows stay, revoked, for the audit
+			// trail. COALESCE keeps an earlier revocation time.
+			{`UPDATE keys SET revoked = COALESCE(revoked, ?), label = '' WHERE user_id = ?`, []any{now, id}},
 			{`DELETE FROM memberships WHERE user_id = ?`, []any{id}},
 			{`DELETE FROM vault_remotes WHERE vault_id = ?`, []any{id}},
 			{`UPDATE users SET email_enc = NULL, handle = ?, global_admin = 0, deleted = ? WHERE id = ?`,

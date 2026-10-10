@@ -34,6 +34,7 @@ import (
 	"fmt"
 	"log/slog"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -166,8 +167,16 @@ func ValidateSlug(s string) error {
 	if !handlePattern.MatchString(s) {
 		return fmt.Errorf("%w: must match %s", ErrInvalidSlug, handlePattern)
 	}
+	if slices.Contains(reservedSlugs, s) {
+		return fmt.Errorf("%w: %q is reserved", ErrInvalidSlug, s)
+	}
 	return nil
 }
+
+// reservedSlugs are names the server gives meaning to when choosing a vault,
+// so a team may not take them. "personal" addresses a user's own vault
+// (vault: "personal"); a team with that slug would be ambiguous with it.
+var reservedSlugs = []string{"personal"}
 
 // validText checks free text typed by a person: key labels and team names.
 func validText(what, s string, maxRunes int) error {
