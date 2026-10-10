@@ -203,11 +203,11 @@ func (s *Server) WithGit(repo *git.Repo) *Server {
 // nor rewrite a note a tool is in the middle of changing. The phases that
 // talk to the network run outside it, so a stalled remote never holds up a
 // write.
-func (c *Core) StartSync(ctx context.Context) {
-	if c.git == nil {
-		return
-	}
-	c.git.StartSync(ctx, &c.write)
+//
+// The returned channel closes when the sync loop has stopped after ctx is
+// cancelled; see git.Repo.StartSync.
+func (c *Core) StartSync(ctx context.Context) <-chan struct{} {
+	return c.git.StartSync(ctx, &c.write)
 }
 
 // Session returns a server for one new connection, over the same vaults.

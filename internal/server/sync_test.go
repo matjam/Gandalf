@@ -52,7 +52,14 @@ func TestStartSyncHoldsTheWriteLockWhileChangingTheTree(t *testing.T) {
 	defer cancel()
 
 	h.server.Core.write.Lock()
-	h.server.StartSync(ctx)
+	stopped := h.server.StartSync(ctx)
+
+	// The temporary vault is removed after the test, and a sync still pushing
+	// when that happens holds files open on Windows.
+	t.Cleanup(func() {
+		cancel()
+		<-stopped
+	})
 
 	// Several intervals pass. Nothing reaches the remote, because the sync's
 	// first phase is waiting on the lock this test holds.

@@ -328,7 +328,11 @@ func TestSyncTickNoticesARepair(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(h.context)
 	defer cancel()
-	h.server.StartSync(ctx)
+	stopped := h.server.StartSync(ctx)
+	t.Cleanup(func() {
+		cancel()
+		<-stopped
+	})
 
 	deadline := time.Now().Add(30 * time.Second)
 	for time.Now().Before(deadline) {

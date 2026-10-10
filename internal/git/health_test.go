@@ -761,3 +761,37 @@ func TestSyncLoopLogsEveryFailedAttempt(t *testing.T) {
 		t.Errorf("logged %d failed attempts, want one per tick (at least 3)", got)
 	}
 }
+
+// The channel StartSync returns is how a caller waits for git to let go of the
+// repository before removing it; on Windows an exiting test otherwise races a
+// push that is still holding files open.
+func TestStartSyncSaysWhenItHasStopped(t *testing.T) {
+	repo := committedRepo(t)
+	if err := SaveConfig(repo.root, Config{SyncInterval: "20ms"}); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	stopped := repo.StartSync(ctx, Unguarded)
+
+	select {
+	case <-stopped:
+		t.Fatal("the loop reported itself stopped while it was running")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	cancel()
+	select {
+	case <-stopped:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the loop never reported itself stopped after its context ended")
+	}
+
+	// Nothing to run is already stopped.
+	select {
+	case <-(*Repo)(nil).StartSync(ctx, Unguarded):
+	case <-time.After(time.Second):
+		t.Fatal("a nil repository's loop is not reported as stopped")
+	}
+}

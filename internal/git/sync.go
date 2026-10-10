@@ -255,12 +255,20 @@ func (r *Repo) refExists(ref string) bool {
 // been wrong. A loop that logged the first failure and then went quiet is how
 // a sync that stopped working stayed unnoticed for a month, and a line per
 // interval is a small price for a log that still says so on day thirty.
-func (r *Repo) StartSync(ctx context.Context, guard sync.Locker) {
+//
+// The returned channel closes once the loop has stopped and any sync it had
+// under way has returned, so a caller that is about to remove the repository
+// can wait for git to let go of it. It is already closed when there is
+// nothing to run.
+func (r *Repo) StartSync(ctx context.Context, guard sync.Locker) <-chan struct{} {
+	stopped := make(chan struct{})
 	if r == nil || r.disabled {
-		return
+		close(stopped)
+		return stopped
 	}
 
 	go func() {
+		defer close(stopped)
 		for {
 			cfg, err := LoadConfig(r.root)
 			interval := DefaultSyncInterval
@@ -286,4 +294,5 @@ func (r *Repo) StartSync(ctx context.Context, guard sync.Locker) {
 			}
 		}
 	}()
+	return stopped
 }
