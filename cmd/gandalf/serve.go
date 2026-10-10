@@ -122,10 +122,18 @@ func prepare(root string, seed, useGit bool) (*vault.Vault, *git.Repo, error) {
 		return v, nil, nil
 	}
 
+	// The repository stays attached whatever Ensure says. It used to be
+	// dropped on any error, and a server holding no repository answers
+	// every history question with "not a git repository", commits nothing,
+	// and syncs nothing, which is indistinguishable from a vault that was
+	// never under git. A repository that exists but cannot be read is
+	// recorded as broken, reported by boot and by every writing tool, and
+	// picked up again by the first commit or sync tick after it is repaired.
 	repo := git.Open(v.Root())
 	if err := repo.Ensure(); err != nil {
-		fmt.Fprintf(os.Stderr, "gandalf: git: %v\n", err)
-		return v, nil, nil
+		fmt.Fprintf(os.Stderr, "gandalf: WARNING: git is not working for %s: %v\n"+
+			"gandalf: notes will still be written, but NOTHING is being committed or synced until this is repaired\n",
+			v.Root(), err)
 	}
 	return v, repo, nil
 }

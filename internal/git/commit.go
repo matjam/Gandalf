@@ -16,17 +16,38 @@ const maxReason = 500
 // The message says which tool changed which note, and is generated. The reason
 // says why, comes from whoever asked for the change, and may be empty — a
 // commit Gandalf makes on its own behalf has no why beyond its message.
+//
+// A commit that cannot be made is an error, and it is also recorded: the
+// repository is marked broken, with the cause and the time, until a later
+// commit succeeds. Callers that carry on after a failed commit (the note has
+// already been written, and losing it to a commit error would be worse) can
+// read the record rather than each having to remember.
+//
+// Before every commit the repository is probed, cheaply, so a repair made
+// while the server was running is noticed on the next write without waiting
+// for the sync loop. The first commit after a repair also sweeps in everything
+// written while the repository was broken, and says so.
 func (r *Repo) Commit(message, reason string) error {
 	if r == nil || r.disabled {
 		return nil
 	}
+
 	if !r.IsRepo() {
-		return nil
+		// Never having been a repository is how a vault run without git
+		// looks, and committing to it is a no-op. Having been one and no
+		// longer being one is something deleting .git did, and not a thing to
+		// carry on past in silence.
+		if !r.wasRepo() {
+			return nil
+		}
+		r.markBroken(errNoGitDir)
+		return brokenError(errNoGitDir)
 	}
 
 	cfg, err := LoadConfig(r.root)
 	if err != nil {
-		return err
+		r.markBroken(err)
+		return brokenError(err)
 	}
 	if !cfg.IsEnabled() {
 		return nil
@@ -35,7 +56,39 @@ func (r *Repo) Commit(message, reason string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	return r.commitLocked(message, reason)
+	return r.commitTrackedLocked(message, reason)
+}
+
+// commitTrackedLocked commits and keeps the health record true. It assumes
+// r.mu is held and that the vault is a repository with git enabled.
+//
+// An empty message with a broken repository is the sync loop noticing a
+// repair: there is no write to attribute the checkpoint to.
+func (r *Repo) commitTrackedLocked(message, reason string) error {
+	health := r.Health()
+	recovering := health.Broken()
+
+	if recovering {
+		// The full check, not the cheap one: what broke it may be a stray
+		// empty object that the cheap probe cannot see, and the first thing
+		// a commit would do is trip over it again.
+		if err := r.verify(); err != nil {
+			r.markBroken(err)
+			return brokenError(err)
+		}
+		message, reason = recoveryCommit(health, message, reason)
+	} else if err := r.probe(); err != nil {
+		r.markBroken(err)
+		return brokenError(err)
+	}
+
+	if err := r.commitLocked(message, reason); err != nil {
+		r.markBroken(err)
+		return brokenError(err)
+	}
+
+	r.markHealthy()
+	return nil
 }
 
 // commitLocked assumes r.mu is held.

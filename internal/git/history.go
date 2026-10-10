@@ -69,6 +69,11 @@ type Entry struct {
 }
 
 // Available reports whether this repo can answer questions about history.
+//
+// "Not a repository" and "a repository git cannot read" are different answers
+// and are kept apart. The second wraps ErrBroken and carries what git said, so
+// a model told that history is unavailable is also told the user has a
+// repository to repair, rather than being sent to create one.
 func (r *Repo) Available() error {
 	switch {
 	case r == nil:
@@ -76,9 +81,37 @@ func (r *Repo) Available() error {
 	case r.disabled:
 		return ErrGitDisabled
 	case !r.IsRepo():
+		if r.wasRepo() {
+			r.markBroken(errNoGitDir)
+			return brokenError(errNoGitDir)
+		}
 		return ErrNoGit
 	}
+
+	// A repository recorded as broken is looked at again, so that reading
+	// history works the moment it is repaired and not only after the next
+	// write or sync tick. The repair is not recorded here: that is the
+	// checkpoint commit's job, and a read should not be what makes it.
+	if health := r.Health(); health.Broken() {
+		if err := r.verify(); err != nil {
+			r.markBroken(err)
+			return brokenError(err)
+		}
+	}
 	return nil
+}
+
+// explain turns a failed read into the right error. A history command that
+// fails has either asked about something that is not there, which is the
+// caller's to hear about, or run into a repository that has stopped working,
+// which is everyone's. Checking is only done on the failure path, so reads
+// pay nothing for it.
+func (r *Repo) explain(op string, err error) error {
+	if cause := r.verify(); cause != nil {
+		r.markBroken(cause)
+		return brokenError(cause)
+	}
+	return fmt.Errorf("%s: %w", op, err)
 }
 
 // Log returns the commits that touched one note, newest first, following the
@@ -102,7 +135,13 @@ func (r *Repo) log(limit int, from, notePath string) ([]Entry, error) {
 	}
 	if !r.hasCommits() {
 		// A repository with no commits is not an error: it is a vault nothing
-		// has been written to yet.
+		// has been written to yet. HEAD failing to resolve is not the same
+		// thing, and reading it as one is how a damaged repository looked
+		// like an empty history.
+		if err := r.probe(); err != nil {
+			r.markBroken(err)
+			return nil, brokenError(err)
+		}
 		return nil, nil
 	}
 
@@ -133,7 +172,7 @@ func (r *Repo) log(limit int, from, notePath string) ([]Entry, error) {
 
 	out, err := r.run(args...)
 	if err != nil {
-		return nil, fmt.Errorf("git log: %w", err)
+		return nil, r.explain("git log", err)
 	}
 
 	entries := parseLog(out)
@@ -298,7 +337,7 @@ func (r *Repo) Show(commit, notePath string) ([]byte, error) {
 
 	out, err := r.runRaw("show", commit+":"+notePath)
 	if err != nil {
-		return nil, fmt.Errorf("read %s at %s: %w", notePath, commit, err)
+		return nil, r.explain(fmt.Sprintf("read %s at %s", notePath, commit), err)
 	}
 	return out, nil
 }
@@ -331,7 +370,7 @@ func (r *Repo) Diff(fromCommit, fromPath, toCommit, toPath string) (string, erro
 
 	out, err := r.run(args...)
 	if err != nil {
-		return "", fmt.Errorf("git diff: %w", err)
+		return "", r.explain("git diff", err)
 	}
 	return out, nil
 }
@@ -350,6 +389,12 @@ func (r *Repo) Resolve(rev string) (string, error) {
 
 	out, err := r.run("rev-parse", "--verify", "--quiet", "--short", rev+"^{commit}")
 	if err != nil || out == "" {
+		// A revision that does not resolve in a repository that cannot be
+		// read says nothing about the revision.
+		if cause := r.verify(); cause != nil {
+			r.markBroken(cause)
+			return "", brokenError(cause)
+		}
 		return "", fmt.Errorf("no commit %q in this vault's history", rev)
 	}
 	return out, nil

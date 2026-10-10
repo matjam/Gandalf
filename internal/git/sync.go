@@ -78,7 +78,7 @@ func (r *Repo) SetRemote(url string) (Config, error) {
 	if url == "" {
 		// Drop the remote from git if it exists; ignore failure when absent.
 		_, _ = r.run("remote", "remove", cfg.RemoteName())
-		_ = r.commitLocked("gandalf: clear git remote", "")
+		_ = r.commitTrackedLocked("gandalf: clear git remote", "")
 		return cfg, nil
 	}
 
@@ -86,7 +86,7 @@ func (r *Repo) SetRemote(url string) (Config, error) {
 		return Config{}, err
 	}
 
-	_ = r.commitLocked("gandalf: configure git remote", "")
+	_ = r.commitTrackedLocked("gandalf: configure git remote", "")
 	return cfg, nil
 }
 
@@ -122,8 +122,19 @@ func (r *Repo) setRemoteLocked(name, url string) error {
 // write lock, so that a checkpoint cannot sweep a half-written note into a
 // commit under the wrong subject, and a merge cannot rewrite a note a tool is
 // in the middle of changing.
+//
+// Every call first re-examines the repository itself (see Check), remote or
+// no remote. That is what makes a periodic sync the thing that notices a
+// repository has broken between writes, and the thing that notices it has
+// been repaired. A repository that is broken is not synced: there is nothing
+// trustworthy to merge into, and the error says why. Whether the attempt
+// succeeds is also recorded for Health, so a remote that has been failing for
+// a day is something the vault can say rather than something only a log knows.
 func (r *Repo) Sync(ctx context.Context, guard sync.Locker) error {
-	if r == nil || r.disabled || !r.IsRepo() {
+	if r == nil || r.disabled {
+		return nil
+	}
+	if !r.isRepoUnlocked() && !r.wasRepo() {
 		return nil
 	}
 
@@ -131,9 +142,28 @@ func (r *Repo) Sync(ctx context.Context, guard sync.Locker) error {
 	if err != nil {
 		return err
 	}
-	if !cfg.IsEnabled() || cfg.URL == "" {
+	if !cfg.IsEnabled() {
 		return nil
 	}
+
+	if err := r.Check(guard); err != nil {
+		return err
+	}
+	if cfg.URL == "" {
+		return nil
+	}
+
+	err = r.syncRemote(ctx, guard, cfg)
+
+	// Cancellation is shutdown, which says nothing about the remote.
+	if !errors.Is(err, context.Canceled) {
+		r.noteSync(err)
+	}
+	return err
+}
+
+// syncRemote is the part of Sync that talks to the remote.
+func (r *Repo) syncRemote(ctx context.Context, guard sync.Locker, cfg Config) error {
 	remote := cfg.RemoteName()
 
 	if err := r.checkpoint(guard, remote, cfg.URL); err != nil {
@@ -172,7 +202,7 @@ func (r *Repo) checkpoint(guard sync.Locker, remote, url string) error {
 	if err := r.setRemoteLocked(remote, url); err != nil {
 		return fmt.Errorf("set remote: %w", err)
 	}
-	return r.commitLocked("gandalf: sync checkpoint", "")
+	return r.commitTrackedLocked("gandalf: sync checkpoint", "")
 }
 
 // merge folds the fetched remote branch into the working tree, preferring the
@@ -220,6 +250,11 @@ func (r *Repo) refExists(ref string) bool {
 
 // StartSync runs Sync on an interval until ctx is cancelled, passing guard
 // through to each run. Failures are logged; they never stop the loop.
+//
+// Every failed attempt is logged, at error level, with how long things have
+// been wrong. A loop that logged the first failure and then went quiet is how
+// a sync that stopped working stayed unnoticed for a month, and a line per
+// interval is a small price for a log that still says so on day thirty.
 func (r *Repo) StartSync(ctx context.Context, guard sync.Locker) {
 	if r == nil || r.disabled {
 		return
@@ -242,7 +277,12 @@ func (r *Repo) StartSync(ctx context.Context, guard sync.Locker) {
 			// Cancellation is shutdown, not failure: a fetch cut short
 			// because the server is stopping is not worth an error line.
 			if err := r.Sync(ctx, guard); err != nil && !errors.Is(err, context.Canceled) {
-				slog.ErrorContext(ctx, "gandalf: git sync", "error", err)
+				health := r.Health()
+				slog.ErrorContext(ctx, "gandalf: git sync",
+					"error", err,
+					"git", health.State.String(),
+					"broken_since", health.Since,
+					"sync_failures", health.SyncFailures)
 			}
 		}
 	}()

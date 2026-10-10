@@ -2,8 +2,12 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/matjam/gandalf/internal/git"
 )
 
 func TestPrepareRequiresAVault(t *testing.T) {
@@ -54,5 +58,58 @@ func TestServeRejectsBadFlags(t *testing.T) {
 	}
 	if err := run([]string{"serve", "-nonsense"}); err == nil {
 		t.Error("serve with an unknown flag succeeded")
+	}
+}
+
+// emptyHeadCommit zeroes the loose object HEAD points at, which is what a
+// crash left behind in the vault that prompted this test: the branch ref was
+// intact, the commit it named was a file of no bytes, and `git log` answered
+// "bad object HEAD".
+func emptyHeadCommit(t *testing.T, root string) {
+	t.Helper()
+
+	cmd := exec.Command("git", "rev-parse", "HEAD")
+	cmd.Dir = root
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("rev-parse HEAD: %v", err)
+	}
+	id := strings.TrimSpace(string(out))
+
+	object := filepath.Join(root, ".git", "objects", id[:2], id[2:])
+	if err := os.Chmod(object, 0o644); err != nil {
+		t.Fatalf("chmod %s: %v", object, err)
+	}
+	if err := os.Truncate(object, 0); err != nil {
+		t.Fatalf("truncate %s: %v", object, err)
+	}
+}
+
+// TestPrepareKeepsABrokenRepositoryAttached pins the defect that hid a month
+// of lost history. A repository that exists but cannot be read is not the same
+// as no repository: prepare used to print the error and hand back a nil repo,
+// and a server holding nil answers every history question with "not a git
+// repository" and commits nothing, indefinitely, with no one told.
+func TestPrepareKeepsABrokenRepositoryAttached(t *testing.T) {
+	silence(t)
+
+	root := filepath.Join(t.TempDir(), "vault")
+	if _, repo, err := prepare(root, true, true); err != nil || repo == nil {
+		t.Fatalf("prepare on a fresh vault: repo=%v err=%v", repo, err)
+	}
+	emptyHeadCommit(t, root)
+
+	_, repo, err := prepare(root, false, true)
+	if err != nil {
+		t.Fatalf("prepare refused to serve a vault with a broken repository: %v", err)
+	}
+	if repo == nil {
+		t.Fatal("prepare dropped the repository, so the server would run as if the vault were not under git")
+	}
+	if !repo.IsRepo() {
+		t.Error("the repository exists, so it must still be reported as one")
+	}
+	if health := repo.Health(); health.State != git.StateBroken || health.Err == nil {
+		t.Errorf("health = %+v, want broken with the error that broke it", health)
 	}
 }
