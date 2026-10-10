@@ -5,6 +5,7 @@ go 1.26.6
 require (
 	github.com/goccy/go-yaml v1.19.2
 	github.com/modelcontextprotocol/go-sdk v1.7.0
+	golang.org/x/crypto v0.54.0
 	modernc.org/sqlite v1.56.0
 )
 
@@ -33,7 +34,6 @@ require (
 	github.com/viant/afs v1.30.0 // indirect
 	github.com/yalue/onnxruntime_go v1.32.0 // indirect
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
-	golang.org/x/crypto v0.54.0 // indirect
 	golang.org/x/exp v0.0.0-20260727155853-b88d891fe743 // indirect
 	golang.org/x/image v0.44.0 // indirect
 	golang.org/x/oauth2 v0.35.0 // indirect
