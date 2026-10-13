@@ -4,15 +4,7 @@ BIN := bin/gandalf
 GOOS := $(shell $(GO) env GOOS)
 GOARCH := $(shell $(GO) env GOARCH)
 
-# ONNX Runtime is roughly fourteen times faster than the pure-Go compute
-# backend — a vault that takes twenty minutes to index takes ninety seconds.
-# It needs two native pieces: the onnxruntime shared library, and the Rust
-# tokenizer as a static archive linked at build time.
-#
-# On macOS both are a short step away, so ORT is the default there and the
-# build fetches what it can. Everywhere else the pure-Go backend is the
-# default, because a build that fails on a fresh clone is worse than a slow
-# index. Force either with `make build ORT=1` or `make build ORT=0`.
+# Local inference requires ONNX Runtime and the Rust tokenizer archive.
 TOKENIZERS_VERSION := v1.27.0
 LIBDIR := .build/lib
 TOKENIZERS_LIB := $(LIBDIR)/libtokenizers.a
@@ -30,11 +22,7 @@ ONNXRUNTIME_DIR := $(shell \
 		done; \
 	done; fi)
 
-ifeq ($(GOOS),darwin)
 ORT ?= 1
-else
-ORT ?= 0
-endif
 
 # The prebuilt tokenizer archive is published per platform. darwin/arm64 and
 # friends are all released; anything not listed has to build it from source.
@@ -58,33 +46,28 @@ TOKENIZERS_ASSET := libtokenizers.linux-s390x.tar.gz
 endif
 # Windows is absent deliberately: onnxruntime publishes Windows binaries but
 # the tokenizer archive does not, so the fast path there needs a Rust
-# toolchain. The pure-Go backend is the default rather than a failed build.
+# toolchain. Builds without ORT support HTTP embeddings or disabled search.
 
-.PHONY: all build build-ort build-go test vet fmt fmt-check check clean deps doctor-deps
+.PHONY: all build build-ort build-no-local test vet fmt fmt-check check clean deps doctor-deps
 
 all: check build
 
-# build picks the fast path when this platform wants it and the pieces are
-# present, and says which one it took either way. Silently producing a binary
-# fourteen times slower than the one you asked for is the failure worth
-# avoiding here.
+# Missing native dependencies fail explicitly instead of changing backends.
 build:
 ifeq ($(ORT),1)
 	@if [ -z "$(TOKENIZERS_ASSET)" ]; then \
-		echo "no prebuilt tokenizer for $(GOOS)/$(GOARCH); building without ONNX Runtime"; \
-		$(MAKE) build-go; \
+		echo "no prebuilt tokenizer for $(GOOS)/$(GOARCH); build libtokenizers.a manually or use make build ORT=0 for HTTP embeddings"; exit 1; \
 	elif [ -z "$(ONNXRUNTIME_DIR)" ]; then \
-		echo "onnxruntime not found (try: brew install onnxruntime); building without it"; \
-		$(MAKE) build-go; \
+		echo "onnxruntime not found; install it or set GANDALF_ONNXRUNTIME"; exit 1; \
 	else \
 		$(MAKE) build-ort; \
 	fi
 else
-	@$(MAKE) build-go
+	@$(MAKE) build-no-local
 endif
 
-build-go:
-	@echo "building $(BIN) with the pure-Go backend"
+build-no-local:
+	@echo "building $(BIN) without local inference; use -embed http or -embed none"
 	$(GO) build -o $(BIN) ./cmd/gandalf
 
 build-ort: $(TOKENIZERS_LIB)

@@ -11,7 +11,7 @@ permissions:
 jobs:
   test:
     # The vault lives on whichever machine the agent runs on, so the build
-    # matrix is the platform guarantee: no cgo, no platform-specific paths.
+    # matrix verifies HTTP embeddings and all non-inference tools without cgo.
     strategy:
       fail-fast: false
       matrix:
@@ -48,3 +48,34 @@ jobs:
 
       - name: Build
         run: go build ./...
+
+  native:
+    runs-on: ubuntu-latest
+    env:
+      CGO_ENABLED: 1
+      CGO_LDFLAGS: -L${{ github.workspace }}/.build/lib
+      GANDALF_ONNXRUNTIME: ${{ github.workspace }}/.build/onnxruntime/lib
+      GANDALF_MODEL_TESTS: 1
+      GANDALF_MEMORY_TESTS: 1
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+          check-latest: true
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/gandalf/models
+          key: bge-small-en-v1.5-native-model
+      - name: Install native dependencies
+        run: |
+          mkdir -p .build/onnxruntime
+          curl -fsSL https://github.com/microsoft/onnxruntime/releases/download/v1.29.0/onnxruntime-linux-x64-1.29.0.tgz -o .build/onnxruntime.tar.gz
+          tar xzf .build/onnxruntime.tar.gz --strip-components=1 -C .build/onnxruntime
+          make deps
+      - name: Vet native code
+        run: go vet -tags ORT ./...
+      - name: Test native inference, memory, and races
+        run: go test -tags ORT -race ./...
+      - name: Build native binary
+        run: make build

@@ -354,9 +354,9 @@ func TestLocalValidatesWhatTheModelReturns(t *testing.T) {
 		{
 			name: "a short batch",
 			run: func(_ context.Context, _ []string) ([][]float32, error) {
-				return [][]float32{make([]float32, localDims)}, nil
+				return nil, nil
 			},
-			want: "1 embeddings for 2 inputs",
+			want: "0 embeddings for 1 inputs",
 		},
 		{
 			name: "the wrong dimensions",

@@ -19,7 +19,7 @@ func TestLocalAgainstTheRealModel(t *testing.T) {
 		t.Skip("set GANDALF_MODEL_TESTS=1 to download and run the embedding model")
 	}
 
-	l := NewLocal(t.TempDir())
+	l := NewLocal("")
 	defer l.Close()
 
 	ctx := context.Background()

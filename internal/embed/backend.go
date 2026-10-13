@@ -2,6 +2,7 @@ package embed
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -21,11 +22,6 @@ type Backend string
 const (
 	// BackendORT is ONNX Runtime through cgo: the native, optimised path.
 	BackendORT Backend = "onnxruntime"
-
-	// BackendGo is the pure-Go compute backend. It needs nothing installed and
-	// is roughly twenty times slower, because it has no BLAS, no SIMD kernels,
-	// and no platform acceleration behind it.
-	BackendGo Backend = "pure-go"
 )
 
 // LibraryPathEnv overrides the directory the ONNX Runtime shared library is
@@ -98,26 +94,17 @@ func findInDirs(dirs []string) string {
 	return ""
 }
 
-// newBestSession returns the fastest session this binary and machine can
-// manage, and says which one it got.
-//
-// ORT is tried first and its failure is not an error: the binary may have been
-// built without the ORT tag, or the library may not be installed. Either way a
-// working slow embedder beats a broken fast one, because search that is late
-// is still search and search that will not start is not.
+// newBestSession requires the native runtime. Falling back to the Go backend
+// retains an unbounded graph cache and can exhaust the host's memory.
 func newBestSession(ctx context.Context) (*hugot.Session, Backend, error) {
 	var opts []options.WithOption
 	if dir := FindORTLibraryDir(); dir != "" {
 		opts = append(opts, options.WithOnnxLibraryPath(dir))
 	}
 
-	if session, err := hugot.NewORTSession(ctx, opts...); err == nil {
-		return session, BackendORT, nil
-	}
-
-	session, err := hugot.NewGoSession(ctx)
+	session, err := hugot.NewORTSession(ctx, opts...)
 	if err != nil {
-		return nil, "", err
+		return nil, "", fmt.Errorf("local embeddings require ONNX Runtime and a binary built with -tags ORT: %w; use -embed http or -embed none when native inference is unavailable", err)
 	}
-	return session, BackendGo, nil
+	return session, BackendORT, nil
 }

@@ -36,7 +36,8 @@ belongs in a tool:
 
 ## Install
 
-Requires Go 1.26 or newer. Nothing else is mandatory:
+Requires Go 1.26 or newer. Local search also requires ONNX Runtime and the Rust
+tokenizer static library; see platform setup below.
 
 ```
 git clone https://github.com/matjam/gandalf
@@ -45,22 +46,14 @@ make build            # -> bin/gandalf
 install -m755 bin/gandalf ~/.local/bin/gandalf
 ```
 
-That always produces a working binary. Whether it produces a *fast* one depends on
-two optional native libraries, because search embeds notes with a model running
-in-process:
+Local embeddings use ONNX Runtime exclusively. Inference processes one chunk at a
+time and serializes concurrent requests to bound working memory. There is no
+pure-Go inference fallback. If native inference cannot start, search reports the
+failure while the other tools remain available.
 
-| | Needs | Speed |
-|---|---|---|
-| **ONNX Runtime** | `onnxruntime` shared library + `libtokenizers.a` | ~37ms per chunk |
-| **Pure Go** | nothing | ~510ms per chunk |
-
-Roughly fourteen times, measured on the same vault: a 431-note vault indexes in about
-three minutes rather than twenty. Indexing is incremental and runs in the background,
-so the slow backend is liveable — it is the first index that hurts.
-
-`make build` prints which backend it used and never fails over a missing dependency;
-it falls back and says so. `make doctor-deps` reports what the fast path is missing
-without building anything.
+`make build` fails if native dependencies are missing. `make doctor-deps` reports
+what is missing. `make build ORT=0` builds without local inference for use with
+`-embed http` or `-embed none`.
 
 ### macOS
 
@@ -71,12 +64,11 @@ brew install onnxruntime
 make build            # fetches libtokenizers.a, links against Homebrew's onnxruntime
 ```
 
-Apple silicon and Intel are both covered. `make build ORT=0` forces the pure-Go
-backend if you would rather not have the dependency.
+Apple silicon and Intel are both covered.
 
 ### Linux
 
-ONNX Runtime is not the default — pass `ORT=1` once the library is installed.
+ONNX Runtime is the default. Install the library before building.
 Distribution packaging is patchy and often absent from the official repositories, so
 check your package manager first but expect to use Microsoft's build:
 
@@ -85,7 +77,7 @@ curl -sL https://github.com/microsoft/onnxruntime/releases/download/v1.29.0/onnx
 sudo cp -a onnxruntime-linux-x64-1.29.0/lib/libonnxruntime.so* /usr/local/lib/
 sudo ldconfig
 
-make build ORT=1      # fetches libtokenizers.a for your architecture
+make build            # fetches libtokenizers.a for your architecture
 ```
 
 Use `onnxruntime-linux-aarch64-*.tgz` on 64-bit ARM. `make build` searches
@@ -100,16 +92,15 @@ from [daulet/tokenizers](https://github.com/daulet/tokenizers).
 
 ### Windows
 
-Use the pure-Go backend:
+Build without local inference for HTTP embeddings or disabled search:
 
 ```
 go build -o gandalf.exe ./cmd/gandalf
 ```
 
 Microsoft publishes ONNX Runtime for Windows, but `libtokenizers` does not ship a
-Windows archive, so the fast path needs a Rust toolchain to build that static library
-yourself. Unless you have a large vault and are willing to do that, the pure-Go
-backend is the sensible choice — everything except embedding throughput is identical.
+Windows archive, so local inference needs a Rust toolchain to build that static
+library yourself. Otherwise use `-embed http` or `-embed none`.
 
 If you do build the archive: put `onnxruntime.dll` on the loader path or point
 `GANDALF_ONNXRUNTIME` at its directory, put `libtokenizers.a` somewhere the linker
@@ -316,9 +307,9 @@ gandalf reindex -vault DIR -quiet   # summary only
 
 ### Which engine does the embedding
 
-`reindex` and `boot` both name the compute backend in use — `onnxruntime` or
-`pure-go` — so a slow index is diagnosable rather than mysterious. See
-[Install](#install) for the difference and how to get the fast one.
+`reindex` and `boot` name `onnxruntime` when local inference is running. If the
+native runtime is unavailable, search reports the initialization failure. See
+[Install](#install) for native dependencies.
 
 ## Importing an existing vault
 
@@ -426,16 +417,15 @@ internal/server/        MCP tool handlers
 ## Building
 
 ```
-make build            # -> bin/gandalf, fast backend where available
-make build ORT=0      # force the pure-Go backend
-make build ORT=1      # force ONNX Runtime, and fail if it is not available
+make build            # -> bin/gandalf with ONNX Runtime, requires native dependencies
+make build ORT=0      # HTTP embeddings or disabled search only
 make deps             # fetch the prebuilt tokenizer archive only
 make doctor-deps      # report what the fast path is missing
 make check            # vet + tests
 ```
 
-The pure-Go build has no native dependencies and works with `CGO_ENABLED=0` on
-Linux, macOS, and Windows.
+The build without local inference has no native dependencies and works with
+`CGO_ENABLED=0` on Linux, macOS, and Windows.
 
 The ONNX Runtime build needs two native pieces: the `onnxruntime` shared library
 (`brew install onnxruntime`, or your distribution's package), and `libtokenizers.a`,

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/knights-analytics/hugot"
 	"github.com/knights-analytics/hugot/pipelines"
@@ -46,10 +47,12 @@ type Local struct {
 	run func(ctx context.Context, texts []string) ([][]float32, error)
 
 	once     sync.Once
+	mu       sync.Mutex // One inference at a time bounds working memory.
+	closed   bool
 	err      error
 	session  *hugot.Session
 	pipeline *pipelines.FeatureExtractionPipeline
-	backend  Backend
+	backend  atomic.Value // Backend status remains readable during inference.
 }
 
 // NewLocal returns an in-process embedder. The model is not loaded until the
@@ -62,7 +65,12 @@ func (l *Local) Model() string { return LocalModel }
 
 // Backend reports which compute path the model is running on. It is empty
 // until the model has been loaded, since that is when the choice is made.
-func (l *Local) Backend() Backend { return l.backend }
+func (l *Local) Backend() Backend {
+	if backend := l.backend.Load(); backend != nil {
+		return backend.(Backend)
+	}
+	return ""
+}
 
 // Dims is the vector length.
 func (l *Local) Dims() int { return localDims }
@@ -75,21 +83,34 @@ func (l *Local) Embed(ctx context.Context, texts []string) ([]Vector, error) {
 	if len(texts) == 0 {
 		return nil, nil
 	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.closed {
+		return nil, fmt.Errorf("local embedder is closed")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 
 	if err := l.load(ctx); err != nil {
 		return nil, err
 	}
 
-	embeddings, err := l.run(ctx, texts)
-	if err != nil {
-		return nil, fmt.Errorf("embed with %s: %w", l.Model(), err)
-	}
-	if len(embeddings) != len(texts) {
-		return nil, fmt.Errorf("model returned %d embeddings for %d inputs", len(embeddings), len(texts))
-	}
-
-	vectors := make([]Vector, len(embeddings))
-	for i, e := range embeddings {
+	// A note can contain hundreds of chunks. Passing all of them to the
+	// transformer together makes its attention tensors scale with note size.
+	vectors := make([]Vector, len(texts))
+	for i := range texts {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		embeddings, err := l.run(ctx, texts[i:i+1])
+		if err != nil {
+			return nil, fmt.Errorf("embed with %s: %w", l.Model(), err)
+		}
+		if len(embeddings) != 1 {
+			return nil, fmt.Errorf("model returned %d embeddings for 1 inputs", len(embeddings))
+		}
+		e := embeddings[0]
 		if len(e) != localDims {
 			return nil, fmt.Errorf("model returned %d dimensions, expected %d", len(e), localDims)
 		}
@@ -97,12 +118,21 @@ func (l *Local) Embed(ctx context.Context, texts []string) ([]Vector, error) {
 		// stored vectors are comparable regardless of input length.
 		vectors[i] = Normalise(Vector(e))
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 
 	return vectors, nil
 }
 
 // Close releases the model.
 func (l *Local) Close() error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.closed {
+		return nil
+	}
+	l.closed = true
 	if l.session == nil {
 		return nil
 	}
@@ -123,12 +153,14 @@ func (l *Local) load(ctx context.Context) error {
 			return
 		}
 
-		session, backend, err := newBestSession(ctx)
+		// A request ending must not cancel the shared runtime's lifetime.
+		// Embed checks cancellation between completed single-input calls.
+		session, backend, err := newBestSession(context.WithoutCancel(ctx))
 		if err != nil {
 			l.err = fmt.Errorf("start the embedding runtime: %w", err)
 			return
 		}
-		l.backend = backend
+		l.backend.Store(backend)
 
 		path, err := modelPath(ctx, dir)
 		if err != nil {
@@ -153,11 +185,7 @@ func (l *Local) load(ctx context.Context) error {
 
 		l.session, l.pipeline = session, pipeline
 		l.run = func(ctx context.Context, texts []string) ([][]float32, error) {
-			out, err := pipeline.RunPipeline(ctx, texts)
-			if err != nil {
-				return nil, err
-			}
-			return out.Embeddings, nil
+			return runLocalPipeline(ctx, pipeline, texts)
 		}
 	})
 
