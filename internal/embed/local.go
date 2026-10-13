@@ -208,7 +208,10 @@ func modelPath(ctx context.Context, dir string) (string, error) {
 	if complete(path) {
 		return path, nil
 	}
-	return hugot.DownloadModel(ctx, LocalModel, dir, hugot.NewDownloadOptions())
+	if err := downloadLocalModel(ctx, path); err != nil {
+		return "", err
+	}
+	return path, nil
 }
 
 // complete reports whether every file the pipeline needs is present and
